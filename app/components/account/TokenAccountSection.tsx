@@ -4,7 +4,6 @@ import { Copyable } from '@components/common/Copyable';
 import { TableCardBody } from '@components/common/TableCardBody';
 import { Account, NFTData, TokenProgramData, useFetchAccountInfo } from '@providers/accounts';
 import { TOKEN_2022_PROGRAM_ID, useScaledUiAmountForMint } from '@providers/accounts/tokens';
-import isMetaplexNFT from '@providers/accounts/utils/isMetaplexNFT';
 import { useCluster } from '@providers/cluster';
 import { PublicKey } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
@@ -46,6 +45,7 @@ import { ExternalLink, RefreshCw } from 'react-feather';
 import { create } from 'superstruct';
 import useSWR from 'swr';
 
+import { isMetaplexNFT } from '@/app/providers/accounts/utils/isMetaplex';
 import { FullLegacyTokenInfo, getTokenInfo, getTokenInfoSwrKey } from '@/app/utils/token-info';
 
 import { TokenExtensionsStatusRow } from './token-extensions/TokenExtensionsStatusRow';

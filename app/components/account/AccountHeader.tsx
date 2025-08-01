@@ -3,14 +3,15 @@ import { isNFTokenAccount } from '@components/account/nftoken/isNFTokenAccount';
 import { NFTokenAccountHeader } from '@components/account/nftoken/NFTokenAccountHeader';
 import { Identicon } from '@components/common/Identicon';
 import { Account, isTokenProgramData, TokenProgramData, useMintAccountInfo } from '@providers/accounts';
-import isMetaplexNFT from '@providers/accounts/utils/isMetaplexNFT';
 import { MetadataPointer, TokenMetadata } from '@validators/accounts/token-extension';
 import React, { Suspense, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { create } from 'superstruct';
 
 import { CompressedNftAccountHeader } from '@/app/components/account/CompressedNftCard';
+import { MetaplexFungibleTokenHeader } from '@/app/components/account/MetaplexFTHeader';
 import { getProxiedUri } from '@/app/features/metadata/utils';
+import { isMetaplexFungibleToken, isMetaplexNFT } from '@/app/providers/accounts/utils/isMetaplex';
 import { useMetadataJsonLink } from '@/app/providers/compressed-nft';
 import { FullTokenInfo, isRedactedTokenAddress } from '@/app/utils/token-info';
 import { MintAccountInfo } from '@/app/validators/accounts/token';
@@ -32,6 +33,10 @@ export function AccountHeader({
 
     const parsedData = account?.data.parsed;
     const isToken = parsedData && isTokenProgramData(parsedData) && parsedData?.parsed.type === 'mint';
+
+    if (isMetaplexFungibleToken(parsedData) && parsedData.nftData) {
+        return <MetaplexFungibleTokenHeader nftData={parsedData.nftData} address={address} />;
+    }
 
     if (isMetaplexNFT(parsedData, mintInfo) && parsedData.nftData) {
         return <MetaplexNFTHeader nftData={parsedData.nftData} address={address} />;
