@@ -58,8 +58,7 @@ function NormalMetaplexNFTAttributesCard({ metadataUri }: { metadataUri: string 
 
     React.useEffect(() => {
         fetchMetadataAttributes();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+    }, []);
     if (status === 'loading') {
         return <LoadingCard />;
     }
