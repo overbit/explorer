@@ -7,7 +7,7 @@
         "build:info": "node scripts/update-build-info.js",
         "build-sb": "storybook build",
         "coverage": "vitest --coverage",
-        "dev": "next dev",
+        "dev": "next dev -p 3001",
         "format": "prettier --config .prettierrc.cjs **/*.{ts,tsx,mts,mjs,cjs} *.json --check",
         "format:ci": "pnpm format",
         "gen": "pnpx shadcn@^2.4.0 add",

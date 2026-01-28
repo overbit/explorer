@@ -1,39 +1,38 @@
 //
-// solana-variables.scss
-// Use this to overwrite Bootstrap and Dashkit variables
+// solana-variables.scss (Gainsway Theme)
+// Clean white minimal design with orange accent
 //
 
-// Example of a variable override to change Dashkit's background color
-// Remove the "//" to comment it in and see it in action!
-$body-bg: #f9fdfc !default;
+// Background - Pure white for minimal aesthetic
+$body-bg: #ffffff !default;
 
-// Colors
+// Colors - Minimal monochrome palette
 
 $white: #ffffff !default;
-$gray-100: #f9fdfc;
-$gray-200: #f1f8f6;
-$gray-300: #e5ebe9;
-$gray-400: #c6e6de;
-$gray-500: #abd5c6;
-$gray-600: #86b8b6;
-$gray-700: #698582;
-$gray-800: #387462;
-$gray-900: #1b4e3f;
-$black: #232323;
+$gray-100: #f5f5f5;
+$gray-200: #e5e5e5;
+$gray-300: #d4d4d4;
+$gray-400: #a3a3a3;
+$gray-500: #737373;
+$gray-600: #525252;
+$gray-700: #404040;
+$gray-800: #262626;
+$gray-900: #171717;
+$black: #000000;
 
-$rainbow-1: #fa62fc;
-$rainbow-2: #be84e8;
-$rainbow-3: #79abd2;
-$rainbow-4: #38d0bd;
-$rainbow-5: #1dd79b;
+// Gainsway brand colors
+$gainsway-lime: #c9ff00;
+$gainsway-orange: #f7931a;
+$gainsway-black: #000000;
+$gainsway-white: #ffffff;
 
-$primary: #42ba96 !default;
-$primary-dark: #33a382 !default;
-$success: #19be56 !default;
+$primary: #c9ff00 !default; // Bright lime/chartreuse
+$primary-dark: #a8d600 !default;
+$success: #c9ff00 !default; // Lime green
 $secondary: $gray-700;
-$danger: #b45be1;
-$warning: #d83aeb !default;
-$info: #43b5c5 !default;
+$danger: #dc2626;
+$warning: #f7931a !default; // Bitcoin orange
+$info: #3b82f6 !default;
 $light: $gray-100;
 $dark: $gray-900;
 
@@ -50,48 +49,42 @@ $link-color: $primary-dark;
 // Global
 
 .display-2 {
-    font-family: Saira, Helvetica, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.text-rainbow {
-    background: linear-gradient(0.3turn, #e400ff, #00ffbd);
+.text-gainsway-gradient {
+    background: linear-gradient(135deg, #c9ff00 0%, #f7931a 100%);
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
 
-.bg-rainbow {
-    background: linear-gradient(0.3turn, #e400ff, #00ffbd);
+.bg-gainsway-gradient {
+    background: linear-gradient(135deg, #c9ff00 0%, #f7931a 100%);
 }
 
-.bg-rainbow-1 {
-    background: #fa62fc;
+.bg-gainsway-lime {
+    background: #c9ff00;
 }
-.bg-rainbow-2 {
-    background: #be84e8;
+.bg-gainsway-orange {
+    background: #f7931a;
 }
-.bg-rainbow-3 {
-    background: #79abd2;
+.bg-gainsway-black {
+    background: #000000;
 }
-.bg-rainbow-4 {
-    background: #38d0bd;
-}
-.bg-rainbow-5 {
-    background: #1dd79b;
+.bg-gainsway-white {
+    background: #ffffff;
 }
 
-.text-rainbow-1 {
-    color: #fa62fc;
+.text-gainsway-lime {
+    color: #c9ff00;
 }
-.text-rainbow-2 {
-    color: #be84e8;
+.text-gainsway-orange {
+    color: #f7931a;
 }
-.text-rainbow-3 {
-    color: #79abd2;
+.text-gainsway-black {
+    color: #000000;
 }
-.text-rainbow-4 {
-    color: #38d0bd;
-}
-.text-rainbow-5 {
-    color: #1dd79b;
+.text-gainsway-white {
+    color: #ffffff;
 }

@@ -2,12 +2,13 @@
 @tailwind utilities;
 
 :root {
-    --accent: #13d89b;
-    --card-border: #111;
+    /* Gainsway brand - minimal black/white with lime green and orange accents */
+    --accent: #c9ff00;
+    --card-border: #1a1a1a;
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --border: oklch(0.922 0 0);
-    
+    --popover-foreground: oklch(0 0 0);
+    --border: oklch(0.1 0 0);
+
     /* Tailwind variables - compatibility only, values don't matter
      * Required because @tailwind base is skipped to avoid conflicts
      * with Bootstrap/Dashkit reset styles. Ring utilities override these. */
@@ -18,10 +19,10 @@
     --tw-skew-y: 0;
     --tw-scale-x: 1;
     --tw-scale-y: 1;
-    --tw-ring-inset: var(--tw-empty,/*!*/ /*!*/);
+    --tw-ring-inset: var(--tw-empty, /*!*/ /*!*/);
     --tw-ring-offset-width: 0px;
     --tw-ring-offset-color: #fff;
-    --tw-ring-color: rgb(59 130 246 / 0.5);
+    --tw-ring-color: rgb(201 255 0 / 0.5);
     --tw-ring-width: 0px;
 }
 
@@ -33,14 +34,14 @@
         flex-direction: column;
         min-width: 0;
         word-wrap: break-word;
-        background-color: #1e2423;
+        background-color: #0a0a0a;
         background-clip: border-box;
-        border: 1px solid #282d2b;
+        border: 1px solid #1a1a1a;
         border-radius: 0.5rem;
 
         margin-bottom: 1.5rem;
-        border-color: #111;
-        box-shadow: 0 0.75rem 1.5rem rgba(20, 24, 22, 0.5);
+        border-color: #0d0d0d;
+        box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.5);
     }
     .e-card-body {
         flex: 1 1 auto;
