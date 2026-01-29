@@ -1,6 +1,7 @@
 'use client';
 
 import Logo from '@img/logos-solana/dark-explorer-logo.svg';
+import Gainsway from '@img/logos-solana/gainsway.svg';
 import { useDisclosure } from '@mantine/hooks';
 import { useClusterPath } from '@utils/url';
 import Image from 'next/image';
@@ -26,9 +27,41 @@ export function Navbar({ children }: INavbarProps) {
     const selectedLayoutSegments = useSelectedLayoutSegments();
     return (
         <nav className="navbar navbar-expand-lg navbar-light">
-            <div className="container px-4">
-                <Link href={homePath}>
-                    <Image alt="Solana Explorer" height={22} src={Logo} width={214} priority />
+            <div className="container px-4  ">
+                <Link className="d-flex align-items-center" href={homePath}>
+                    <Image
+                        alt="Gainsway"
+                        height={45}
+                        src={Gainsway}
+                        width={100}
+                        style={{
+                            filter: 'invert(41%) sepia(100%) saturate(2000%) hue-rotate(35deg) brightness(150%)',
+                        }}
+                    />
+                    <Image
+                        alt="Solana Explorer"
+                        height={22}
+                        src={Logo}
+                        width={22}
+                        priority
+                        style={{
+                            marginLeft: '-6px',
+                            objectFit: 'cover',
+                            objectPosition: 'left',
+                        }}
+                    />
+                    <Image
+                        alt="Solana Explorer"
+                        height={22}
+                        src={Logo}
+                        width={192}
+                        priority
+                        style={{
+                            filter: 'invert(41%) sepia(100%) saturate(2000%) hue-rotate(35deg) brightness(150%)',
+                            objectFit: 'cover',
+                            objectPosition: 'right',
+                        }}
+                    />
                 </Link>
 
                 <button className="navbar-toggler" type="button" onClick={navHandlers.toggle}>
