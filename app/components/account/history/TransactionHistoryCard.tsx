@@ -149,7 +149,7 @@ function MemoField({ memo }: { memo: string }) {
             style={{ cursor: isTruncated ? 'pointer' : 'default' }}
         >
             <Copyable text={cleanMemo}>
-                <span className="text-muted">{displayText}</span>
+                <span className="text">{displayText}</span>
             </Copyable>
             {showTooltip && (
                 <div className="popover bs-popover-top show" style={{ maxWidth: '20rem' }}>
