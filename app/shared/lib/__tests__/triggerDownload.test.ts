@@ -65,7 +65,7 @@ describe('triggerDownload', () => {
 
         it('should throw error if data is invalid base64', async () => {
             await expect(triggerDownload('Hello World!', 'file.txt')).rejects.toThrow(
-                'Invalid data: not a valid base64 string'
+                'Invalid data: not a valid base64 string',
             );
         });
     });
@@ -92,14 +92,14 @@ describe('triggerDownload', () => {
 
             await triggerDownload(base64, 'file.txt', { type: mimeType });
 
-            expect(global.Blob).toHaveBeenCalledWith([expect.any(Buffer)], { type: mimeType });
+            expect(global.Blob).toHaveBeenCalledWith([expect.any(Uint8Array)], { type: mimeType });
         });
 
         it('should create blob without type when not provided', async () => {
             const base64 = toBase64('Hello');
             await triggerDownload(base64, 'file.txt');
 
-            expect(global.Blob).toHaveBeenCalledWith([expect.any(Buffer)], {});
+            expect(global.Blob).toHaveBeenCalledWith([expect.any(Uint8Array)], {});
         });
 
         it('should create object URL from blob', async () => {

@@ -1,8 +1,8 @@
 import { TableCardBody } from '@components/common/TableCardBody';
 import { ProgramField } from '@entities/instruction-card';
 import { useScrollAnchor } from '@providers/scroll-anchor';
+import { CollapsibleCard } from '@shared/ui/collapsible-card';
 import { TransactionInstruction } from '@solana/web3.js';
-import React from 'react';
 
 import getInstructionCardScrollAnchorId from '@/app/utils/get-instruction-card-scroll-anchor-id';
 
@@ -12,36 +12,42 @@ export function UnknownDetailsCard({
     index,
     ix,
     programName,
+    innerCards,
 }: {
     index: number;
     ix: TransactionInstruction;
     programName: string;
+    innerCards?: React.ReactNode[];
 }) {
-    const [expanded, setExpanded] = React.useState(false);
-
     const scrollAnchorRef = useScrollAnchor(getInstructionCardScrollAnchorId([index + 1]));
 
     return (
-        <div className="card" ref={scrollAnchorRef}>
-            <div className={`card-header${!expanded ? ' border-bottom-none' : ''}`}>
-                <h3 className="card-header-title mb-0 d-flex align-items-center">
-                    <span className={`badge bg-info-soft me-2`}>#{index + 1}</span>
+        <CollapsibleCard
+            ref={scrollAnchorRef}
+            defaultExpanded={false}
+            title={
+                <>
+                    <span className="badge bg-info-soft me-2">#{index + 1}</span>
                     {programName} Instruction
-                </h3>
-
-                <button
-                    className={`btn btn-sm d-flex ${expanded ? 'btn-black active' : 'btn-white'}`}
-                    onClick={() => setExpanded(e => !e)}
-                >
-                    {expanded ? 'Collapse' : 'Expand'}
-                </button>
-            </div>
-            {expanded && (
-                <TableCardBody>
-                    <ProgramField programId={ix.programId} showExtendedInfo />
-                    <BaseRawDetails ix={ix} />
-                </TableCardBody>
-            )}
-        </div>
+                </>
+            }
+        >
+            <TableCardBody>
+                <ProgramField programId={ix.programId} showExtendedInfo />
+                <BaseRawDetails ix={ix} />
+                {innerCards && innerCards.length > 0 && (
+                    <>
+                        <tr className="table-sep">
+                            <td colSpan={3}>Inner Instructions</td>
+                        </tr>
+                        <tr>
+                            <td colSpan={3}>
+                                <div className="inner-cards !e-m-0">{innerCards}</div>
+                            </td>
+                        </tr>
+                    </>
+                )}
+            </TableCardBody>
+        </CollapsibleCard>
     );
 }

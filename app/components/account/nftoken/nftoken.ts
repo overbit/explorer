@@ -1,7 +1,8 @@
 import { Connection, PublicKey } from '@solana/web3.js';
-import axios from 'axios';
 import bs58 from 'bs58';
 import pLimit from 'p-limit';
+
+import { fromHex } from '@/app/shared/lib/bytes';
 
 import { NftokenTypes } from './nftoken-types';
 
@@ -23,7 +24,7 @@ export namespace NftokenFetcher {
             filters: [
                 {
                     memcmp: {
-                        bytes: bs58.encode(Buffer.from(nftokenAccountDiscInHex, 'hex')),
+                        bytes: bs58.encode(fromHex(nftokenAccountDiscInHex)),
                         offset: 0,
                     },
                 },
@@ -114,9 +115,13 @@ export namespace NftokenFetcher {
         const promises = urls.map(url =>
             limit(async () => {
                 try {
-                    const { data } = await axios.get(url, {
-                        timeout: 5_000,
+                    const response = await fetch(url, {
+                        signal: AbortSignal.timeout(5_000),
                     });
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch NFT metadata: ${response.status}`);
+                    }
+                    const data = await response.json();
                     metadataMap.set(url, {
                         animation_url: data.animation_url ?? null,
                         description: data.description ?? null,
@@ -128,7 +133,7 @@ export namespace NftokenFetcher {
                 } catch {
                     metadataMap.set(url, null);
                 }
-            })
+            }),
         );
         await Promise.all(promises);
 

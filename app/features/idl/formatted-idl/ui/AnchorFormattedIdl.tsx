@@ -1,7 +1,8 @@
 import type { AnchorIdl } from '@entities/idl';
 import { formatDisplayIdl, getFormattedIdl, useFormatAnchorIdl } from '@entities/idl';
 
-import { invariant } from '../lib/invariant';
+import { invariant } from '@/app/shared/lib/invariant';
+
 import { useSearchIdl } from '../model/search';
 import { BaseFormattedIdl } from './BaseFormattedIdl';
 import type { StandardFormattedIdlProps } from './types';
@@ -11,5 +12,5 @@ export function AnchorFormattedIdl({ idl, programId, searchStr = '' }: StandardF
     const formattedIdl = getFormattedIdl(formatDisplayIdl, idl, programId);
     const anchorFormattedIdl = useFormatAnchorIdl(idl ? formattedIdl : idl);
     const searchResults = useSearchIdl(anchorFormattedIdl, searchStr);
-    return <BaseFormattedIdl idl={searchResults} originalIdl={idl} searchStr={searchStr} />;
+    return <BaseFormattedIdl idl={searchResults} originalIdl={idl} programId={programId} searchStr={searchStr} />;
 }

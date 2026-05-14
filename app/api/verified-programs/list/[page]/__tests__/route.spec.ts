@@ -1,16 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import Logger from '@/app/utils/logger';
+import { Logger } from '@/app/shared/lib/logger';
 
 import { GET } from '../route';
 
-vi.mock('@/app/utils/logger', () => ({
-    default: {
-        error: vi.fn(),
-    },
-}));
-
-global.fetch = vi.fn();
+const fetchMock = vi.fn();
+vi.stubGlobal('fetch', fetchMock);
 
 describe('GET /api/verified-programs/list/[page]', () => {
     const mockRequest = new Request('http://localhost:3000/api/verified-programs/list/1');
@@ -35,7 +30,7 @@ describe('GET /api/verified-programs/list/[page]', () => {
 
     describe('validation', () => {
         it('rejects non-numeric page numbers', async () => {
-            const params = { params: { page: 'abc' } };
+            const params = { params: Promise.resolve({ page: 'abc' }) };
             const response = await GET(mockRequest, params);
 
             expect(response.status).toBe(400);
@@ -44,7 +39,7 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('rejects page number zero', async () => {
-            const params = { params: { page: '0' } };
+            const params = { params: Promise.resolve({ page: '0' }) };
             const response = await GET(mockRequest, params);
 
             expect(response.status).toBe(400);
@@ -53,7 +48,7 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('rejects negative page numbers', async () => {
-            const params = { params: { page: '-1' } };
+            const params = { params: Promise.resolve({ page: '-1' }) };
             const response = await GET(mockRequest, params);
 
             expect(response.status).toBe(400);
@@ -62,7 +57,7 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('rejects decimal page numbers', async () => {
-            const params = { params: { page: '1.5' } };
+            const params = { params: Promise.resolve({ page: '1.5' }) };
             const response = await GET(mockRequest, params);
 
             expect(response.status).toBe(400);
@@ -71,9 +66,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('accepts page number 1', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
@@ -83,9 +78,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('accepts large page numbers', async () => {
-            const params = { params: { page: '999' } };
+            const params = { params: Promise.resolve({ page: '999' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
@@ -97,22 +92,22 @@ describe('GET /api/verified-programs/list/[page]', () => {
 
     describe('successful requests', () => {
         it('fetches program list from osec.io', async () => {
-            const params = { params: { page: '2' } };
+            const params = { params: Promise.resolve({ page: '2' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
 
             await GET(mockRequest, params);
 
-            expect(fetch).toHaveBeenCalledWith('https://verify.osec.io/verified-programs/2');
+            expect(fetchMock).toHaveBeenCalledWith('https://verify.osec.io/verified-programs/2');
         });
 
         it('returns program list with cache headers', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
@@ -127,9 +122,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('returns correct pagination metadata', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
@@ -144,9 +139,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('returns program IDs array', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 json: async () => mockProgramList,
                 ok: true,
             } as Response);
@@ -164,9 +159,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
 
     describe('error handling', () => {
         it('returns error on 404 from osec.io', async () => {
-            const params = { params: { page: '999' } };
+            const params = { params: Promise.resolve({ page: '999' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 ok: false,
                 status: 404,
             } as Response);
@@ -179,9 +174,9 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('returns error on 500 from osec.io', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 ok: false,
                 status: 500,
             } as Response);
@@ -194,23 +189,26 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('logs error message on failed fetch', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
 
-            vi.mocked(fetch).mockResolvedValueOnce({
+            fetchMock.mockResolvedValueOnce({
                 ok: false,
                 status: 503,
             } as Response);
 
             await GET(mockRequest, params);
 
-            expect(Logger.error).toHaveBeenCalledWith('Failed to fetch verified programs page 1: HTTP 503');
+            expect(Logger.error).toHaveBeenCalledWith(
+                new Error('[api:verified-programs] Failed to fetch verified programs page'),
+                { page: 1, status: 503 },
+            );
         });
 
         it('handles network errors', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
             const networkError = new Error('Network error');
 
-            vi.mocked(fetch).mockRejectedValueOnce(networkError);
+            fetchMock.mockRejectedValueOnce(networkError);
 
             const response = await GET(mockRequest, params);
 
@@ -220,14 +218,14 @@ describe('GET /api/verified-programs/list/[page]', () => {
         });
 
         it('logs network errors to Logger', async () => {
-            const params = { params: { page: '1' } };
+            const params = { params: Promise.resolve({ page: '1' }) };
             const networkError = new Error('Network error');
 
-            vi.mocked(fetch).mockRejectedValueOnce(networkError);
+            fetchMock.mockRejectedValueOnce(networkError);
 
             await GET(mockRequest, params);
 
-            expect(Logger.error).toHaveBeenCalledWith('Error in verified-programs list API:', networkError);
+            expect(Logger.error).toHaveBeenCalledWith(networkError);
         });
     });
 });

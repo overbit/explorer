@@ -4,6 +4,8 @@ import { formatSerdeIdl, getFormattedIdl } from '@entities/idl';
 import { type Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 
+import { fromUtf8 } from '@/app/shared/lib/bytes';
+
 import type { IdlInterpreter } from '../idl-interpreter.d';
 import { AnchorUnifiedProgram } from './anchor-program';
 import { parseArrayInput } from './array-parser';
@@ -35,7 +37,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
         connection: Connection,
         wallet: Wallet,
         programId: PublicKey | string,
-        idl: AnchorIdl
+        idl: AnchorIdl,
     ): Promise<AnchorUnifiedProgram> {
         const publicKey = typeof programId === 'string' ? new PublicKey(programId) : programId;
 
@@ -52,7 +54,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
             anchorProgram = new AnchorProgram(properIdl, provider);
         } catch (error) {
             throw new Error(
-                `Failed to create Anchor program: ${error instanceof Error ? error.message : String(error)}`
+                `Failed to create Anchor program: ${error instanceof Error ? error.message : String(error)}`,
             );
         }
 
@@ -63,7 +65,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
         program: T,
         instructionName: Parameters<typeof program.buildInstruction>[0],
         accounts: Record<string, string>,
-        args: Parameters<typeof program.buildInstruction>[2]
+        args: Parameters<typeof program.buildInstruction>[2],
     ) {
         // Find instruction definition in IDL
         const ixDef = this.findInstructionTypeDefs(program, instructionName);
@@ -113,7 +115,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
                 case 'string':
                     return String(value);
                 case 'bytes':
-                    return Buffer.from(value);
+                    return fromUtf8(value);
                 case 'pubkey':
                 case 'publicKey':
                     return new PublicKey(value);
@@ -137,8 +139,8 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
                 return arr.map((item: any) => this.convertArgument(item, type.array[0]));
             }
             if ('defined' in type) {
-                // For defined types, use Buffer
-                return Buffer.from(value);
+                // For defined types, use Uint8Array
+                return fromUtf8(value);
             }
         }
 
@@ -151,7 +153,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
     private convertArguments(
         instructionName: string,
         argumentsMeta: Readonly<Required<IdlInstruction['args']>>,
-        args: any[]
+        args: any[],
     ) {
         const convertedArguments = args.map((arg, index) => {
             const argDef = argumentsMeta[index];
@@ -174,7 +176,7 @@ export class AnchorInterpreter implements IdlInterpreter<AnchorIdl, AnchorUnifie
     private convertAccounts(
         instructionName: string,
         accountsMeta: Readonly<Required<IdlInstruction['accounts']>>,
-        accounts: Record<string, string>
+        accounts: Record<string, string>,
     ): Record<string, PublicKey | null> {
         const converted: ReturnType<typeof this.convertAccounts> = {};
 

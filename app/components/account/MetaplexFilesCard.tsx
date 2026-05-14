@@ -18,13 +18,22 @@ export function MetaplexFilesCard({ account, onNotFound }: { account?: Account; 
     const compressedNft = useCompressedNft({ address: account?.pubkey.toString() ?? '', url });
 
     const parsedData = account?.data?.parsed;
-    if (!parsedData || !isTokenProgramData(parsedData) || parsedData.parsed.type !== 'mint' || !parsedData.nftData) {
-        if (compressedNft && compressedNft.compression.compressed) {
-            return <NormalMetaplexFilesCard metadataUri={compressedNft.content.json_uri} />;
-        }
-        return onNotFound();
+    const parsedMetadataUri =
+        parsedData && isTokenProgramData(parsedData) && parsedData.parsed.type === 'mint' && parsedData.nftData
+            ? parsedData.nftData.metadata?.uri
+            : undefined;
+
+    if (typeof parsedMetadataUri === 'string' && parsedMetadataUri.length > 0) {
+        return <NormalMetaplexFilesCard metadataUri={parsedMetadataUri} />;
     }
-    return <NormalMetaplexFilesCard metadataUri={parsedData.nftData.metadata.data.uri} />;
+
+    const compressedMetadataUri =
+        compressedNft && compressedNft.compression.compressed ? compressedNft.content?.json_uri : undefined;
+    if (typeof compressedMetadataUri === 'string' && compressedMetadataUri.length > 0) {
+        return <NormalMetaplexFilesCard metadataUri={compressedMetadataUri} />;
+    }
+
+    return onNotFound();
 }
 
 function NormalMetaplexFilesCard({ metadataUri }: { metadataUri: string }) {

@@ -1,4 +1,5 @@
 import { Account, useAccountInfo, useFetchAccountInfo } from '@providers/accounts';
+import { cn } from '@shared/utils';
 import { ConcurrentMerkleTreeAccount, MerkleTree } from '@solana/spl-account-compression';
 import { PublicKey } from '@solana/web3.js';
 import React from 'react';
@@ -10,6 +11,7 @@ import {
     useCompressedNft,
     useCompressedNftProof,
 } from '@/app/providers/compressed-nft';
+import { toBuffer } from '@/app/shared/lib/bytes';
 
 import { Address } from '../common/Address';
 import { TableCardBody } from '../common/TableCardBody';
@@ -44,7 +46,7 @@ function DasCompressionInfoCard({ proof, compressedNft }: { proof: CompressedNft
     });
     const canopyDepth =
         treeAccountInfo && treeAccountInfo.data && treeAccountInfo.data.data.raw
-            ? ConcurrentMerkleTreeAccount.fromBuffer(treeAccountInfo.data.data.raw).getCanopyDepth()
+            ? ConcurrentMerkleTreeAccount.fromBuffer(toBuffer(treeAccountInfo.data.data.raw)).getCanopyDepth()
             : 0;
     const proofSize = proof.proof.length - canopyDepth;
     return (
@@ -104,7 +106,7 @@ function DasCompressionInfoCard({ proof, compressedNft }: { proof: CompressedNft
 function getVerifiedProofPill(verified: boolean) {
     return (
         <div className={'d-inline-flex align-items-center ms-2'}>
-            <span className={`badge badge-pill bg-dark ${verified ? '' : 'bg-danger-soft'}`}>{`Proof ${
+            <span className={cn('badge badge-pill bg-dark', !verified && 'bg-danger-soft')}>{`Proof ${
                 verified ? '' : 'Not'
             } Verified`}</span>
         </div>

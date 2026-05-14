@@ -7,12 +7,14 @@ import {
     VersionedMessage,
 } from '@solana/web3.js';
 
+import { toBuffer } from '@/app/shared/lib/bytes';
+
 type LookupsForAccountKeyIndex = { lookupTableIndex: number; lookupTableKey: PublicKey };
 
 function findLookupAddressByIndex(
     accountIndex: number,
     message: VersionedMessage,
-    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[]
+    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[],
 ) {
     let lookup: PublicKey;
     // dynamic means that lookups are taken based not on staticAccountKeys
@@ -41,7 +43,7 @@ function findLookupAddressByIndex(
 function fillAccountMetas(
     accountKeyIndexes: number[],
     message: VersionedMessage,
-    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[]
+    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[],
 ) {
     const accountMetas = accountKeyIndexes.map(accountIndex => {
         const { lookup } = findLookupAddressByIndex(accountIndex, message, lookupsForAccountKeyIndex);
@@ -63,7 +65,7 @@ function fillAccountMetas(
 export function findLookupAddress(
     accountIndex: number,
     message: VersionedMessage,
-    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[]
+    lookupsForAccountKeyIndex: LookupsForAccountKeyIndex[],
 ) {
     return findLookupAddressByIndex(accountIndex, message, lookupsForAccountKeyIndex);
 }
@@ -74,13 +76,13 @@ export function fillAddressTableLookupsAccounts(addressTableLookups: MessageAddr
             lookup.writableIndexes.map(index => ({
                 lookupTableIndex: index,
                 lookupTableKey: lookup.accountKey,
-            }))
+            })),
         ),
         ...addressTableLookups.flatMap(lookup =>
             lookup.readonlyIndexes.map(index => ({
                 lookupTableIndex: index,
                 lookupTableKey: lookup.accountKey,
-            }))
+            })),
         ),
     ];
 
@@ -89,7 +91,7 @@ export function fillAddressTableLookupsAccounts(addressTableLookups: MessageAddr
 
 export function intoTransactionInstructionFromVersionedMessage(
     compiledInstruction: MessageCompiledInstruction,
-    originalMessage: VersionedMessage
+    originalMessage: VersionedMessage,
 ): TransactionInstruction {
     const { accountKeyIndexes, data } = compiledInstruction;
     const { addressTableLookups } = originalMessage;
@@ -111,7 +113,7 @@ export function intoTransactionInstructionFromVersionedMessage(
     const accountMetas = fillAccountMetas(accountKeyIndexes, originalMessage, lookupAccounts);
 
     const transactionInstruction: TransactionInstruction = new TransactionInstruction({
-        data: Buffer.from(data),
+        data: toBuffer(data),
         keys: accountMetas,
         programId: programId,
     });

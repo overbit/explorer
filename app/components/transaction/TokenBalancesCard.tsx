@@ -1,6 +1,7 @@
 import { Address } from '@components/common/Address';
 import { BalanceDelta } from '@components/common/BalanceDelta';
 import { useTransactionDetails } from '@providers/transactions';
+import { CollapsibleCard } from '@shared/ui/collapsible-card';
 import { ParsedMessageAccount, PublicKey, TokenBalance } from '@solana/web3.js';
 import { SignatureProps } from '@utils/index';
 import { BigNumber } from 'bignumber.js';
@@ -64,10 +65,7 @@ export function TokenBalancesCardInner({ rows }: TokenBalancesCardInnerProps) {
     }, []);
 
     return (
-        <div className="card">
-            <div className="card-header">
-                <h3 className="card-header-title">Token Balances</h3>
-            </div>
+        <CollapsibleCard title="Token Balances">
             <div className="table-responsive mb-0">
                 <table className="table table-sm table-nowrap card-table">
                     <thead>
@@ -89,7 +87,7 @@ export function TokenBalancesCardInner({ rows }: TokenBalancesCardInnerProps) {
                     </tbody>
                 </table>
             </div>
-        </div>
+        </CollapsibleCard>
     );
 }
 
@@ -134,7 +132,7 @@ function TokenBalanceRow({
 export function generateTokenBalanceRows(
     preTokenBalances: TokenBalance[],
     postTokenBalances: TokenBalance[],
-    accounts: ParsedMessageAccount[]
+    accounts: ParsedMessageAccount[],
 ): TokenBalanceRow[] {
     const preBalanceMap: { [index: number]: TokenBalance } = {};
     const postBalanceMap: { [index: number]: TokenBalance } = {};

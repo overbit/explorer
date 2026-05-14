@@ -1,3 +1,4 @@
+import { fromBase64, indexOf } from '@/app/shared/lib/bytes';
 import type { ProgramDataAccountInfo } from '@/app/validators/accounts/upgradeable-program';
 
 import { NO_SECURITY_TXT_ERROR } from './constants';
@@ -23,15 +24,15 @@ const HEADER = '=======BEGIN SECURITY.TXT V1=======\0';
 const FOOTER = '=======END SECURITY.TXT V1=======\0';
 
 export const fromProgramData = (
-    programData: ProgramDataAccountInfo
+    programData: ProgramDataAccountInfo,
 ): { securityTXT?: NeodymeSecurityTXT; error?: string } => {
     const [data, encoding] = programData.data;
     if (!(data && encoding === 'base64')) return { error: 'Failed to decode program data', securityTXT: undefined };
 
-    const decoded = Buffer.from(data, encoding);
+    const decoded = fromBase64(data);
 
-    const headerIdx = decoded.indexOf(HEADER);
-    const footerIdx = decoded.indexOf(FOOTER);
+    const headerIdx = indexOf(decoded, HEADER);
+    const footerIdx = indexOf(decoded, FOOTER);
 
     if (headerIdx < 0 || footerIdx < 0) {
         return { error: NO_SECURITY_TXT_ERROR, securityTXT: undefined };
@@ -54,7 +55,7 @@ export const fromProgramData = (
                 }
                 return prev;
             },
-            [[]]
+            [[]],
         )
         .map(c => String.fromCharCode(...c))
         .reduce<{ map: { [key: string]: string }; key: string | undefined }>(
@@ -75,7 +76,7 @@ export const fromProgramData = (
                     };
                 }
             },
-            { key: undefined, map: {} }
+            { key: undefined, map: {} },
         ).map;
     if (!REQUIRED_KEYS.every(k => k in map)) {
         return {

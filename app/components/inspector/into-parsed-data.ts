@@ -12,6 +12,8 @@ import {
     UpgradeNonceInfo,
     WithdrawNonceInfo,
 } from '@components/instruction/system/types';
+import { parseMetaplexTokenMetadataInstruction } from '@features/mpl-token-metadata';
+import { MPL_TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 import { TOKEN_PROGRAM_ID } from '@providers/accounts/tokens';
 import {
     AccountMeta,
@@ -58,6 +60,8 @@ import {
     parseRecoverNestedAssociatedTokenInstruction,
 } from '@solana-program/token';
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022';
+
+import { alloc, bytes, equals, toBuffer } from '@/app/shared/lib/bytes';
 
 import { parseTokenProgramInstruction } from './instruction-parsers/spl-token.parser';
 import { parseSystemProgramInstruction } from './instruction-parsers/system-program.parser';
@@ -175,8 +179,8 @@ function convertUpgradeNonceInfo(parsed: any): UpgradeNonceInfo {
     };
 }
 
-function discriminatorToBuffer(discrimnator: number): Buffer {
-    return Buffer.from(Uint8Array.from([discrimnator]));
+function discriminatorToBytes(discrimnator: number): Uint8Array {
+    return bytes([discrimnator]);
 }
 
 function intoProgramName(programId: PublicKey): string | undefined {
@@ -189,12 +193,10 @@ function intoProgramName(programId: PublicKey): string | undefined {
     if (programId.toBase58() === TOKEN_2022_PROGRAM_ADDRESS) {
         return 'spl-token-2022';
     }
+    if (programId.toBase58() === MPL_TOKEN_METADATA_PROGRAM_ID) {
+        return 'mpl-token-metadata';
+    }
     /* add other variants here */
-}
-
-function isDataEqual(data1: Buffer, data2: Buffer): boolean {
-    // Browser will fail if data2 is created with Uint8Array.from
-    return data1.equals(data2);
 }
 
 function intoParsedData(instruction: TransactionInstruction, parsed?: any): any {
@@ -207,8 +209,8 @@ function intoParsedData(instruction: TransactionInstruction, parsed?: any): any 
         let instructionData = data;
 
         // workaround for "create" instructions
-        if (isDataEqual(data, Buffer.alloc(CREATE_ASSOCIATED_TOKEN_DISCRIMINATOR))) {
-            instructionData = discriminatorToBuffer(CREATE_ASSOCIATED_TOKEN_DISCRIMINATOR);
+        if (equals(data, alloc(CREATE_ASSOCIATED_TOKEN_DISCRIMINATOR))) {
+            instructionData = toBuffer(discriminatorToBytes(CREATE_ASSOCIATED_TOKEN_DISCRIMINATOR));
             instruction.data = instructionData; // overwrite original data with the modified one
         }
 
@@ -372,6 +374,18 @@ function intoParsedData(instruction: TransactionInstruction, parsed?: any): any 
             info: parsed ?? info,
             type: UNKNOWN_PROGRAM_TYPE,
         };
+    } else if (programId.toBase58() === MPL_TOKEN_METADATA_PROGRAM_ID) {
+        const result = parseMetaplexTokenMetadataInstruction(instruction);
+        if (result) {
+            return {
+                info: parsed ?? result.info,
+                type: result.type,
+            };
+        }
+        return {
+            info: parsed ?? info,
+            type: UNKNOWN_PROGRAM_TYPE,
+        };
     }
 
     return {
@@ -423,7 +437,7 @@ export function intoParsedTransaction(
     transactionInstruction: TransactionInstruction,
     versionedMessage: VersionedMessage,
     instructions: ParsedMessage['instructions'] = [],
-    signatures: string[] = []
+    signatures: string[] = [],
 ): ParsedTransaction {
     const { keys } = transactionInstruction;
     const { addressTableLookups, recentBlockhash } = versionedMessage;
@@ -447,8 +461,8 @@ export function upcastAccountMeta({ pubkey, isSigner, isWritable }: LegacyAccoun
                 ? AccountRole.WRITABLE_SIGNER
                 : AccountRole.READONLY_SIGNER
             : isWritable
-            ? AccountRole.WRITABLE
-            : AccountRole.READONLY,
+              ? AccountRole.WRITABLE
+              : AccountRole.READONLY,
     };
 }
 

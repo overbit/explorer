@@ -8,6 +8,8 @@ import { Connection, InflationReward, PublicKey } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
 import React from 'react';
 
+import { Logger } from '@/app/shared/lib/logger';
+
 const REWARDS_AVAILABLE_EPOCH = new Map<Cluster, number>([
     [Cluster.MainnetBeta, 132],
     [Cluster.Testnet, 43],
@@ -37,15 +39,17 @@ function reconcile(rewards: Rewards | undefined, update: RewardsUpdate | undefin
         return rewards;
     }
 
-    const combined = (rewards?.rewards || []).concat(update.rewards).filter(value => value !== null);
-
-    const foundOldest = update.foundOldest;
+    const combined = [...(rewards?.rewards ?? []), ...update.rewards];
+    const byEpoch = new Map<number, InflationReward>();
+    combined.forEach(r => {
+        if (r) byEpoch.set(r.epoch, r);
+    });
 
     return {
-        foundOldest,
-        highestFetchedEpoch: rewards?.highestFetchedEpoch || update.highestFetchedEpoch,
+        foundOldest: update.foundOldest,
+        highestFetchedEpoch: rewards?.highestFetchedEpoch ?? update.highestFetchedEpoch,
         lowestFetchedEpoch: update.lowestFetchedEpoch,
-        rewards: combined,
+        rewards: Array.from(byEpoch.values()),
     };
 }
 
@@ -75,7 +79,7 @@ async function fetchRewards(
     cluster: Cluster,
     url: string,
     fromEpoch?: number,
-    highestEpoch?: number
+    highestEpoch?: number,
 ) {
     dispatch({
         key: pubkey.toBase58(),
@@ -93,7 +97,7 @@ async function fetchRewards(
             fromEpoch = epochInfo.epoch - 1;
         } catch (error) {
             if (cluster !== Cluster.Custom) {
-                console.error(error, { url });
+                Logger.error(error, { url });
             }
 
             return dispatch({
@@ -115,7 +119,7 @@ async function fetchRewards(
             return result[0];
         } catch (error) {
             if (cluster !== Cluster.Custom) {
-                console.error(error, { url });
+                Logger.error(error, { url });
             }
         }
         return null;
@@ -174,12 +178,12 @@ export function useFetchRewards() {
                     cluster,
                     url,
                     before.data.lowestFetchedEpoch ? before.data.lowestFetchedEpoch - 1 : undefined,
-                    highestEpoch
+                    highestEpoch,
                 );
             } else {
                 fetchRewards(dispatch, pubkey, cluster, url, undefined, highestEpoch);
             }
         },
-        [state, dispatch, cluster, url]
+        [state, dispatch, cluster, url],
     );
 }

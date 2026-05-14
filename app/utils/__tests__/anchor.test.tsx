@@ -1,9 +1,11 @@
 import { Idl } from '@coral-xyz/anchor';
 import { IdlInstruction, IdlTypeDef } from '@coral-xyz/anchor/dist/cjs/idl';
 import { render, screen } from '@testing-library/react';
-import { mapAccountToRows, mapIxArgsToRows } from '@utils/anchor';
+import { instructionIsSelfCPI, mapAccountToRows, mapIxArgsToRows } from '@utils/anchor';
 import BN from 'bn.js';
-import { vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+import { Logger } from '@/app/shared/lib/logger';
 
 vi.mock('@components/common/JsonViewer', () => ({
     SolarizedJsonViewer: ({ src }: { src: any }) => <div data-testid="json-viewer">{JSON.stringify(src)}</div>,
@@ -47,7 +49,7 @@ describe('anchor utilities - number overflow handling', () => {
             const { container } = render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should display the full number without precision loss
@@ -73,7 +75,7 @@ describe('anchor utilities - number overflow handling', () => {
             const { container } = render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should display the full number
@@ -100,7 +102,7 @@ describe('anchor utilities - number overflow handling', () => {
             const { container } = render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should display the full number without scientific notation
@@ -129,7 +131,7 @@ describe('anchor utilities - number overflow handling', () => {
             const { container } = render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             expect(container.textContent).toContain('1,000,000');
@@ -157,7 +159,7 @@ describe('anchor utilities - number overflow handling', () => {
             const { container } = render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should display without precision loss
@@ -167,8 +169,7 @@ describe('anchor utilities - number overflow handling', () => {
 
     describe('error handling with proper table structure', () => {
         beforeEach(() => {
-            // eslint-disable-next-line @typescript-eslint/no-empty-function
-            vi.spyOn(console, 'log').mockImplementation(() => {});
+            vi.spyOn(Logger, 'debug').mockImplementation(() => {});
         });
 
         afterEach(() => {
@@ -192,15 +193,14 @@ describe('anchor utilities - number overflow handling', () => {
             render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should have logged the error
-            expect(console.log).toHaveBeenCalledTimes(1);
-            expect(console.log).toHaveBeenCalledWith(
-                'Error while displaying IDL-based account data',
-                expect.any(Error)
-            );
+            expect(Logger.debug).toHaveBeenCalledTimes(1);
+            expect(Logger.debug).toHaveBeenCalledWith('[utils:anchor] Error while displaying IDL-based account data', {
+                error: expect.any(Error),
+            });
 
             // Should have proper 3-column structure
             const cells = screen.getAllByRole('cell');
@@ -234,15 +234,14 @@ describe('anchor utilities - number overflow handling', () => {
             render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should have logged the error
-            expect(console.log).toHaveBeenCalledTimes(1);
-            expect(console.log).toHaveBeenCalledWith(
-                'Error while displaying IDL-based account data',
-                expect.any(Error)
-            );
+            expect(Logger.debug).toHaveBeenCalledTimes(1);
+            expect(Logger.debug).toHaveBeenCalledWith('[utils:anchor] Error while displaying IDL-based account data', {
+                error: expect.any(Error),
+            });
 
             // Should have proper 3-column structure
             const cells = screen.getAllByRole('cell');
@@ -276,15 +275,14 @@ describe('anchor utilities - number overflow handling', () => {
             render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should have logged the error
-            expect(console.log).toHaveBeenCalledTimes(1);
-            expect(console.log).toHaveBeenCalledWith(
-                'Error while displaying IDL-based account data',
-                expect.any(Error)
-            );
+            expect(Logger.debug).toHaveBeenCalledTimes(1);
+            expect(Logger.debug).toHaveBeenCalledWith('[utils:anchor] Error while displaying IDL-based account data', {
+                error: expect.any(Error),
+            });
 
             // Should render JSON viewer for non-struct types
             expect(screen.getByTestId('json-viewer')).toBeInTheDocument();
@@ -312,15 +310,14 @@ describe('anchor utilities - number overflow handling', () => {
             render(
                 <table>
                     <tbody>{rows}</tbody>
-                </table>
+                </table>,
             );
 
             // Should have logged the error
-            expect(console.log).toHaveBeenCalledTimes(1);
-            expect(console.log).toHaveBeenCalledWith(
-                'Error while displaying IDL-based account data',
-                expect.any(Error)
-            );
+            expect(Logger.debug).toHaveBeenCalledTimes(1);
+            expect(Logger.debug).toHaveBeenCalledWith('[utils:anchor] Error while displaying IDL-based account data', {
+                error: expect.any(Error),
+            });
 
             // Should render JSON viewer for type alias
             expect(screen.getByTestId('json-viewer')).toBeInTheDocument();
@@ -330,6 +327,57 @@ describe('anchor utilities - number overflow handling', () => {
             expect(cells.length).toBe(3);
             expect(cells[1]).toHaveTextContent('TestTypeAlias');
         });
+    });
+});
+
+describe('instructionIsSelfCPI - Buffer operations', () => {
+    // The Anchor self-CPI tag is '1d9acb512ea545e4' hex reversed
+    const ANCHOR_SELF_CPI_TAG = Buffer.from('1d9acb512ea545e4', 'hex').reverse();
+
+    it('should detect Anchor self-CPI tag with Buffer input', () => {
+        // Create instruction data starting with the self-CPI tag
+        const ixData = Buffer.concat([ANCHOR_SELF_CPI_TAG, Buffer.from([0x01, 0x02, 0x03])]);
+
+        expect(instructionIsSelfCPI(ixData)).toBe(true);
+    });
+
+    it('should detect Anchor self-CPI tag with Uint8Array input', () => {
+        // Create instruction data as Uint8Array
+        const tagArray = new Uint8Array(ANCHOR_SELF_CPI_TAG);
+        const ixData = new Uint8Array([...tagArray, 0x01, 0x02, 0x03]);
+
+        expect(instructionIsSelfCPI(ixData)).toBe(true);
+    });
+
+    it('should return false for non-self-CPI instruction with Buffer', () => {
+        const ixData = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+        expect(instructionIsSelfCPI(ixData)).toBe(false);
+    });
+
+    it('should return false for non-self-CPI instruction with Uint8Array', () => {
+        const ixData = new Uint8Array([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);
+        expect(instructionIsSelfCPI(ixData)).toBe(false);
+    });
+
+    it('should return false for data shorter than 8 bytes', () => {
+        const shortData = Buffer.from([0x01, 0x02, 0x03]);
+        expect(instructionIsSelfCPI(shortData)).toBe(false);
+    });
+
+    it('should return false for empty data', () => {
+        const emptyData = Buffer.from([]);
+        expect(instructionIsSelfCPI(emptyData)).toBe(false);
+    });
+
+    it('should correctly identify the self-CPI tag bytes', () => {
+        // Verify the tag is what we expect (e4 45 a5 2e 51 cb 9a 1d)
+        const expectedTagBytes = [0xe4, 0x45, 0xa5, 0x2e, 0x51, 0xcb, 0x9a, 0x1d];
+        expect(Array.from(ANCHOR_SELF_CPI_TAG)).toEqual(expectedTagBytes);
+    });
+
+    it('should handle exact 8-byte self-CPI tag', () => {
+        // Just the tag, no additional data
+        expect(instructionIsSelfCPI(ANCHOR_SELF_CPI_TAG)).toBe(true);
     });
 });
 

@@ -1,13 +1,11 @@
-import { Response as NodeFetchResponse } from 'node-fetch';
-
-import Logger from '@/app/utils/logger';
+import { Logger } from '@/app/shared/lib/logger';
 
 import { errors, matchMaxSizeError } from './errors';
 
 /**
  * process binary data and catch any specific errors
  */
-export async function processBinary(data: NodeFetchResponse) {
+export async function processBinary(data: Response) {
     const headers = data.headers;
 
     try {
@@ -19,7 +17,7 @@ export async function processBinary(data: NodeFetchResponse) {
         if (matchMaxSizeError(error)) {
             throw errors[413];
         } else {
-            Logger.debug('Debug:', error);
+            Logger.debug('[api:metadata-proxy] Failed to process binary data', { error });
             throw errors[500];
         }
     }
@@ -28,7 +26,7 @@ export async function processBinary(data: NodeFetchResponse) {
 /**
  * process text data as json and handle specific errors
  */
-export async function processJson(data: NodeFetchResponse) {
+export async function processJson(data: Response) {
     const headers = data.headers;
 
     try {
@@ -42,7 +40,7 @@ export async function processJson(data: NodeFetchResponse) {
             // Handle JSON syntax errors specifically
             throw errors[415];
         } else {
-            Logger.debug('Debug:', error);
+            Logger.debug('[api:metadata-proxy] Failed to process JSON data', { error });
             throw errors[500];
         }
     }
@@ -51,12 +49,13 @@ export async function processJson(data: NodeFetchResponse) {
 /**
  * Process text response as JSON, handling newlines and whitespace issues
  */
-export async function processTextAsJson(data: NodeFetchResponse) {
+export async function processTextAsJson(data: Response) {
     const headers = data.headers;
 
     try {
         const text = await data.text();
         // Remove trailing/leading whitespace and normalize line endings
+        // eslint-disable-next-line no-restricted-syntax -- normalize CRLF to LF line endings
         const cleanedText = text.trim().replace(/\r\n/g, '\n');
         const json = JSON.parse(cleanedText);
 
@@ -67,7 +66,7 @@ export async function processTextAsJson(data: NodeFetchResponse) {
         } else if (error instanceof SyntaxError) {
             throw errors[415];
         } else {
-            Logger.debug('Debug:', error);
+            Logger.debug('[api:metadata-proxy] Failed to process text-as-JSON data', { error });
             throw errors[500];
         }
     }

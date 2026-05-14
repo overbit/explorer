@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
-import { Headers as NodeFetchHeaders } from 'node-fetch';
 
-import Logger from '@/app/utils/logger';
+import { Logger } from '@/app/shared/lib/logger';
+
+export const dynamic = 'force-dynamic';
 
 import { fetchResource, matchJsonContent, StatusError } from './feature';
 import { errors } from './feature/errors';
 import { checkURLForPrivateIP, isHTTPProtocol } from './feature/ip';
-
-type Params = { params: object };
 
 const USER_AGENT = process.env.NEXT_PUBLIC_METADATA_USER_AGENT ?? 'Solana Explorer';
 const MAX_SIZE = process.env.NEXT_PUBLIC_METADATA_MAX_CONTENT_SIZE
@@ -15,12 +14,22 @@ const MAX_SIZE = process.env.NEXT_PUBLIC_METADATA_MAX_CONTENT_SIZE
     : 1_000_000; // 1 000 000 bytes
 const TIMEOUT = process.env.NEXT_PUBLIC_METADATA_TIMEOUT ? Number(process.env.NEXT_PUBLIC_METADATA_TIMEOUT) : 10_000; // 10s
 
+// Prevent proxied content (e.g. SVG with embedded scripts) from executing
+// anything if the proxy URL is opened directly as a top-level document.
+const SECURITY_HEADERS = {
+    'Content-Security-Policy':
+        "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'none'",
+    'X-Content-Type-Options': 'nosniff',
+};
+
 /**
  *  Respond with error in a JSON format
  */
 function respondWithError(status: keyof typeof errors, message?: string) {
     return NextResponse.json({ error: message ?? errors[status].message }, { status });
 }
+
+type Params = { params: Promise<object> };
 
 export async function GET(request: Request, { params: _params }: Params) {
     const isProxyEnabled = process.env.NEXT_PUBLIC_METADATA_ENABLED === 'true';
@@ -44,13 +53,13 @@ export async function GET(request: Request, { params: _params }: Params) {
 
         // check that uri has supported protocol despite of any other checks
         if (!isHTTPProtocol(parsedUrl)) {
-            Logger.error(new Error('Unsupported protocol'), parsedUrl.protocol);
+            Logger.error(new Error('[api:metadata-proxy] Unsupported protocol'), { protocol: parsedUrl.protocol });
             return respondWithError(400);
         }
 
         const isPrivate = await checkURLForPrivateIP(parsedUrl);
         if (isPrivate) {
-            Logger.error(new Error('Private IP detected'), parsedUrl.hostname);
+            Logger.error(new Error('[api:metadata-proxy] Private IP detected'), { hostname: parsedUrl.hostname });
             return respondWithError(403);
         }
     } catch (error) {
@@ -58,13 +67,13 @@ export async function GET(request: Request, { params: _params }: Params) {
         return respondWithError(400);
     }
 
-    const headers = new NodeFetchHeaders({
+    const headers = new Headers({
         'Content-Type': 'application/json; charset=utf-8',
         'User-Agent': USER_AGENT,
     });
 
     let data;
-    let resourceHeaders: NodeFetchHeaders;
+    let resourceHeaders: Headers;
 
     try {
         const response = await fetchResource(uriParam, headers, TIMEOUT, MAX_SIZE);
@@ -88,6 +97,7 @@ export async function GET(request: Request, { params: _params }: Params) {
     // preserve original cache-control headers
     // const contentLength = resourceHeaders.get('content-length');
     const responseHeaders: Record<string, string> = {
+        ...SECURITY_HEADERS,
         'Cache-Control': resourceHeaders.get('cache-control') ?? 'no-cache',
         'Content-Type': resourceHeaders.get('content-type') ?? 'application/json; charset=utf-8',
         Etag: resourceHeaders.get('etag') ?? 'no-etag',

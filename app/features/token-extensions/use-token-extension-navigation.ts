@@ -1,12 +1,11 @@
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { type MoreTabs } from '@/app/address/[address]/layout';
+import { type AddressTabPath } from '@/app/address/[address]/layout';
 import { ParsedTokenExtension } from '@/app/components/account/types';
 import { TokenExtension } from '@/app/validators/accounts/token-extension';
 
-// extract type for the tab to not loose the functionality of the token extension navigation
-const TOKEN_EXTENSIONS: Extract<MoreTabs, 'token-extensions'> = 'token-extensions';
+const TOKEN_EXTENSIONS: Extract<AddressTabPath, 'token-extensions'> = 'token-extensions';
 const TOKEN_EXTENSIONS_COMPONENT = `/${TOKEN_EXTENSIONS}`;
 
 function getHash() {
@@ -27,6 +26,7 @@ function isOnDesiredPage() {
 }
 
 function populateUri(path: string, component: string, searchParams: URLSearchParams, hash: string) {
+    // eslint-disable-next-line no-restricted-syntax -- remove slashes from URL component
     const sanitizeComponent = (component: string) => component.replace(/\//g, '');
     return `${path}/${sanitizeComponent(component)}?${searchParams.toString()}#${hash}`;
 }

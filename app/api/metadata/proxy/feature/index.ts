@@ -1,6 +1,4 @@
-import { default as fetch, Headers, Response as NodeFetchResponse } from 'node-fetch';
-
-import Logger from '@/app/utils/logger';
+import { Logger } from '@/app/shared/lib/logger';
 
 import {
     errors,
@@ -11,6 +9,7 @@ import {
     unsupportedMediaError,
 } from './errors';
 import { processBinary, processJson, processTextAsJson } from './processors';
+import { readBodyWithLimit } from './read-body-with-limit';
 
 export { StatusError };
 
@@ -40,35 +39,39 @@ async function requestResource(
     uri: string,
     headers: Headers,
     timeout: number,
-    size: number
-): Promise<[Error, void] | [void, NodeFetchResponse]> {
-    let response: NodeFetchResponse | undefined;
-    let error;
+    size: number,
+): Promise<[Error, void] | [void, Response]> {
     try {
-        response = await fetch(uri, {
+        const upstream = await fetch(uri, {
             headers,
             signal: AbortSignal.timeout(timeout),
-            size,
         });
 
+        // Pre-check Content-Length when present so oversize bodies fail fast.
+        const contentLength = upstream.headers.get('content-length');
+        if (contentLength && Number(contentLength) > size) {
+            await upstream.body?.cancel();
+            return [new Error(`content size over limit: ${size}`), undefined];
+        }
+
+        const buffered = await readBodyWithLimit(upstream, size);
+        // Re-wrap so processors keep using `.arrayBuffer()` / `.json()` / `.text()`.
+        const response = new Response(buffered, { headers: upstream.headers, status: upstream.status });
         return [undefined, response];
     } catch (e) {
         if (e instanceof Error) {
-            error = e;
-        } else {
-            Logger.debug('Debug:', e);
-            error = new Error('Cannot fetch resource');
+            return [e, undefined];
         }
+        Logger.debug('[api:metadata-proxy] Failed to fetch resource', { error: e });
+        return [new Error('Cannot fetch resource'), undefined];
     }
-
-    return [error, undefined];
 }
 
 export async function fetchResource(
     uri: string,
     headers: Headers,
     timeout: number,
-    size: number
+    size: number,
 ): Promise<
     Awaited<ReturnType<typeof processBinary> | ReturnType<typeof processJson> | ReturnType<typeof processTextAsJson>>
 > {

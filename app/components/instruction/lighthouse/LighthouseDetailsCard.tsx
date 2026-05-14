@@ -1,4 +1,4 @@
-import { AccountMeta, AccountRole, Address as TAddress, Instruction } from '@solana/kit';
+import { type AccountMeta, AccountRole, type Instruction } from '@solana/kit';
 import { PublicKey, SignatureResult, TransactionInstruction } from '@solana/web3.js';
 import {
     EquatableOperator,
@@ -35,8 +35,10 @@ import { InstructionCard } from '../InstructionCard';
 import { LIGHTHOUSE_ADDRESS } from './types';
 
 type ParsedCodamaInstruction = {
-    programAddress: TAddress;
-    accounts?: Record<string, AccountMeta>;
+    // `string` instead of branded `Address` — lighthouse-sdk may be compiled
+    // against a different @solana/kit version whose brand is incompatible.
+    programAddress: string;
+    accounts?: Record<string, AccountMeta<string>>;
     data: any;
 };
 
@@ -69,7 +71,7 @@ function parseLighthouseInstruction(ix: ReturnType<typeof upcastTransactionInstr
     const subEnum = (pix: ParsedCodamaInstruction, key: string, array = false) => {
         if (array) {
             const assertions = pix.data[key].map((assertion: Parameters<typeof renderEnumsAsStrings>[0]) =>
-                renderEnumsAsStrings(assertion)
+                renderEnumsAsStrings(assertion),
             );
             pix.data[key] = assertions;
         } else {

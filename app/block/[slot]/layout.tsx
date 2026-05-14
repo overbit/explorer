@@ -3,24 +3,30 @@
 import { Address } from '@components/common/Address';
 import { Epoch } from '@components/common/Epoch';
 import { ErrorCard } from '@components/common/ErrorCard';
+import { ExternalLinkWarning } from '@components/common/ExternalLinkWarning';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { Slot } from '@components/common/Slot';
 import { TableCardBody } from '@components/common/TableCardBody';
+import { estimateRequestedComputeUnits } from '@entities/compute-unit';
 import { BlockProvider, FetchStatus, useBlock, useFetchBlock } from '@providers/block';
 import { useCluster } from '@providers/cluster';
 import { ClusterStatus } from '@utils/cluster';
 import { displayTimestamp, displayTimestampUtc } from '@utils/date';
-import { useClusterPath } from '@utils/url';
-import Link from 'next/link';
-import { notFound, useSelectedLayoutSegment } from 'next/navigation';
-import React, { PropsWithChildren } from 'react';
+import { IBRL_EXPLORER_URL } from '@utils/env';
+import { notFound, useSearchParams } from 'next/navigation';
+import React, { PropsWithChildren, use } from 'react';
+import { ExternalLink } from 'react-feather';
 
-import { estimateRequestedComputeUnits } from '@/app/utils/compute-units-schedule';
+import { type NavigationTab, NavigationTabs } from '@/app/shared/ui/navigation-tabs';
+import { StickyHeader } from '@/app/shared/ui/sticky-header/StickyHeader';
 import { getEpochForSlot, getMaxComputeUnitsInBlock } from '@/app/utils/epoch-schedule';
+import { pickClusterParams } from '@/app/utils/url';
 
-type Props = PropsWithChildren<{ params: { slot: string } }>;
+type SlotParams = { slot: string };
+type Props = PropsWithChildren<{ params: Promise<SlotParams> }>;
+type InnerProps = PropsWithChildren<{ params: SlotParams }>;
 
-function BlockLayoutInner({ children, params: { slot } }: Props) {
+function BlockLayoutInner({ children, params: { slot } }: InnerProps) {
     const slotNumber = Number(slot);
     if (isNaN(slotNumber) || slotNumber >= Number.MAX_SAFE_INTEGER || slotNumber % 1 !== 0) {
         notFound();
@@ -65,8 +71,16 @@ function BlockLayoutInner({ children, params: { slot } }: Props) {
         content = (
             <>
                 <div className="card">
-                    <div className="card-header">
-                        <h3 className="card-header-title mb-0 d-flex align-items-center">Overview</h3>
+                    <div className="card-header align-items-center">
+                        <h3 className="card-header-title">Overview</h3>
+                        {IBRL_EXPLORER_URL && (
+                            <ExternalLinkWarning href={`${IBRL_EXPLORER_URL}/block/${slotNumber}`}>
+                                <>
+                                    <ExternalLink className="e-me-2 e-align-text-top" size={13} />
+                                    IBRL Explorer
+                                </>
+                            </ExternalLinkWarning>
+                        )}
                     </div>
                     <TableCardBody>
                         <tr>
@@ -215,7 +229,11 @@ function BlockLayoutInner({ children, params: { slot } }: Props) {
     );
 }
 
-export default function BlockLayout({ children, params }: Props) {
+export default function BlockLayout(props: Props) {
+    const params = use(props.params);
+
+    const { children } = props;
+
     return (
         <BlockProvider>
             <BlockLayoutInner params={params}>{children}</BlockLayoutInner>
@@ -223,65 +241,28 @@ export default function BlockLayout({ children, params }: Props) {
     );
 }
 
-const TABS: Tab[] = [
-    {
-        path: '',
-        slug: 'history',
-        title: 'Transactions',
-    },
-    {
-        path: 'rewards',
-        slug: 'rewards',
-        title: 'Rewards',
-    },
-    {
-        path: 'programs',
-        slug: 'programs',
-        title: 'Programs',
-    },
-    {
-        path: 'accounts',
-        slug: 'accounts',
-        title: 'Accounts',
-    },
+const TABS: NavigationTab[] = [
+    { path: '', title: 'Transactions' },
+    { path: 'rewards', title: 'Rewards' },
+    { path: 'programs', title: 'Programs' },
+    { path: 'accounts', title: 'Accounts' },
 ];
 
-type MoreTabs = 'history' | 'rewards' | 'programs' | 'accounts';
-
-type Tab = {
-    slug: MoreTabs;
-    title: string;
-    path: string;
-};
-
 function MoreSection({ children, slot }: { children: React.ReactNode; slot: number }) {
+    const searchParams = useSearchParams();
+    const buildHref = React.useCallback(
+        (path: string) => pickClusterParams(`/block/${slot}/${path}`, searchParams ?? undefined),
+        [slot, searchParams],
+    );
+
     return (
         <>
-            <div className="container">
-                <div className="header">
-                    <div className="header-body pt-0">
-                        <ul className="nav nav-tabs nav-overflow header-tabs">
-                            {TABS.map(({ title, slug, path }) => (
-                                <TabLink key={slug} slot={slot} path={path} title={title} />
-                            ))}
-                        </ul>
-                    </div>
+            <StickyHeader>
+                <div className="container">
+                    <NavigationTabs buildHref={buildHref} tabs={TABS} />
                 </div>
-            </div>
+            </StickyHeader>
             {children}
         </>
-    );
-}
-
-function TabLink({ path, slot, title }: { path: string; slot: number; title: string }) {
-    const tabPath = useClusterPath({ pathname: `/block/${slot}/${path}` });
-    const selectedLayoutSegment = useSelectedLayoutSegment();
-    const isActive = (selectedLayoutSegment === null && path === '') || selectedLayoutSegment === path;
-    return (
-        <li className="nav-item">
-            <Link className={`${isActive ? 'active ' : ''}nav-link`} href={tabPath} scroll={false}>
-                {title}
-            </Link>
-        </li>
     );
 }

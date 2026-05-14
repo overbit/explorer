@@ -15,7 +15,7 @@ describe('useFormPrefill', () => {
                     externalDependencies: [],
                 },
                 form,
-            })
+            }),
         );
 
         expect(result.current).toBeUndefined();
@@ -27,13 +27,13 @@ describe('useFormPrefill', () => {
             useFormPrefill({
                 config: {},
                 form,
-            })
+            }),
         );
 
         expect(result.current).toBeUndefined();
     });
 
-    it('should trigger onValueChange when dependency value changes', async () => {
+    it('should trigger onValueChange when dependency value changes', () => {
         const { form } = setup();
         const onValueChange = vi.fn();
         const dependency: ExternalDependency<string> = {
@@ -54,7 +54,7 @@ describe('useFormPrefill', () => {
             },
             {
                 initialProps: { value: 'initial-value' },
-            }
+            },
         );
 
         expect(onValueChange).toHaveBeenCalledTimes(1);
@@ -64,7 +64,7 @@ describe('useFormPrefill', () => {
         expect(onValueChange).toHaveBeenCalledTimes(2);
     });
 
-    it('should not trigger onValueChange when dependency value has not changed', async () => {
+    it('should not trigger onValueChange when dependency value has not changed', () => {
         const { form } = setup();
         const onValueChange = vi.fn();
         const dependency: ExternalDependency<string> = {
@@ -84,7 +84,7 @@ describe('useFormPrefill', () => {
             },
             {
                 initialProps: {},
-            }
+            },
         );
 
         expect(onValueChange).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe('useFormPrefill', () => {
         expect(onValueChange).toHaveBeenCalledTimes(1);
     });
 
-    it('should trigger onValueChange for dependencies with watchesFormValues when form values change', async () => {
+    it('should trigger onValueChange for dependencies with watchesFormValues when form values change', () => {
         const { form } = setup();
         const onValueChange = vi.fn();
         const dependency: ExternalDependency<string> = {
@@ -110,7 +110,7 @@ describe('useFormPrefill', () => {
                     externalDependencies: [dependency],
                 },
                 form,
-            })
+            }),
         );
 
         expect(onValueChange).toHaveBeenCalled();
@@ -124,7 +124,7 @@ describe('useFormPrefill', () => {
         expect(onValueChange.mock.calls.length).toBeGreaterThan(initialCallCount);
     });
 
-    it('should handle multiple dependencies independently', async () => {
+    it('should handle multiple dependencies independently', () => {
         const { form } = setup();
         const onValueChange1 = vi.fn();
         const onValueChange2 = vi.fn();
@@ -154,7 +154,7 @@ describe('useFormPrefill', () => {
             },
             {
                 initialProps: { value1: 'value-1', value2: 'value-2' },
-            }
+            },
         );
 
         expect(onValueChange1).toHaveBeenCalledTimes(1);
@@ -166,7 +166,7 @@ describe('useFormPrefill', () => {
         expect(onValueChange2).toHaveBeenCalledTimes(1);
     });
 
-    it('should pass current value and form to onValueChange', async () => {
+    it('should pass current value and form to onValueChange', () => {
         const { form } = setup();
         const onValueChange = vi.fn();
         const dependency: ExternalDependency<string> = {
@@ -181,7 +181,7 @@ describe('useFormPrefill', () => {
                     externalDependencies: [dependency],
                 },
                 form,
-            })
+            }),
         );
 
         expect(onValueChange).toHaveBeenCalledWith('test-value', form);
@@ -194,7 +194,7 @@ function setup() {
         useInstructionForm({
             instruction,
             onSubmit: vi.fn(),
-        })
+        }),
     );
     return { form: result.current.form };
 }

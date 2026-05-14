@@ -20,7 +20,7 @@ export async function getProgramCanonicalMetadata(programAddress: string, seed: 
         const content = await unpackAndFetchData({ rpc, ...metadata.data });
         const parsed = JSON.parse(content);
         return parsed;
-    } catch (error) {
+    } catch (_error) {
         throw new Error(errors[422]);
     }
 }
@@ -28,6 +28,11 @@ export async function getProgramCanonicalMetadata(programAddress: string, seed: 
 export const IDL_SEED = 'idl';
 export async function getProgramMetadataIdl(programAddress: string, url: string) {
     return getProgramCanonicalMetadata(programAddress, IDL_SEED, url);
+}
+
+export const CODAMA_IDL_SEED = 'codama:idl';
+export async function getProgramMetadataCodamaIdl(programAddress: string, url: string) {
+    return getProgramCanonicalMetadata(programAddress, CODAMA_IDL_SEED, url);
 }
 
 export const SECURITY_TXT_SEED = 'security';

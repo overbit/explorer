@@ -1,9 +1,14 @@
+/* eslint-disable no-restricted-syntax -- test assertions use RegExp for pattern matching */
 import { intoParsedInstruction, intoParsedTransaction } from '@components/inspector/into-parsed-data';
 import { ParsedInstruction, SystemProgram, TransactionMessage } from '@solana/web3.js';
 import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 
-vi.mock('next/navigation');
+vi.mock('next/navigation', () => ({
+    usePathname: vi.fn(),
+    useRouter: vi.fn(() => ({ push: vi.fn() })),
+    useSearchParams: vi.fn(() => ({ get: vi.fn(), has: vi.fn(), toString: () => '' })),
+}));
 
 import * as stubs from '@/app/__tests__/mock-stubs';
 import * as mock from '@/app/__tests__/mocks';
@@ -40,7 +45,7 @@ describe('instruction::SystemDetailsCard', () => {
                         </AccountsProvider>
                     </TransactionsProvider>
                 </ClusterProvider>
-            </ScrollAnchorProvider>
+            </ScrollAnchorProvider>,
         );
         expect(screen.getByText(/System Program: Transfer/)).toBeInTheDocument();
     });
@@ -70,7 +75,7 @@ describe('instruction::SystemDetailsCard', () => {
                         </AccountsProvider>
                     </TransactionsProvider>
                 </ClusterProvider>
-            </ScrollAnchorProvider>
+            </ScrollAnchorProvider>,
         );
         expect(screen.getByText(/System Program: Transfer w\/ Seed/)).toBeInTheDocument();
     });

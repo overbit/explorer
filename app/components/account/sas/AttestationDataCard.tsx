@@ -8,6 +8,8 @@ import {
 } from 'sas-lib';
 
 import { SolarizedJsonViewer as ReactJson } from '@/app/components/common/JsonViewer';
+import { toBase64 } from '@/app/shared/lib/bytes';
+import { Logger } from '@/app/shared/lib/logger';
 import {
     decodeAccount,
     decodeWithType,
@@ -66,7 +68,7 @@ function AttestationCard({ attestation }: { attestation: SasAttestation }) {
             decoded = deserializeAttestationDataWithBorsh200(schema, Uint8Array.from(attestation.data));
         }
     } catch (e) {
-        console.error(e);
+        Logger.error(e);
     }
 
     return (
@@ -96,7 +98,7 @@ function AttestationCard({ attestation }: { attestation: SasAttestation }) {
                         wordBreak: 'break-all',
                     }}
                 >
-                    {Buffer.from(attestation.data).toString('base64') || '(empty)'}
+                    {toBase64(new Uint8Array(attestation.data)) || '(empty)'}
                 </div>
             )}
         </div>

@@ -215,6 +215,44 @@ describe('MetaplexFilesCard', () => {
         expect(mockOnNotFound).toHaveBeenCalled();
     });
 
+    it('calls onNotFound when parsed NFT metadata uri is missing', () => {
+        const accountWithoutMetadataUri = createMockAccount({
+            data: {
+                parsed: {
+                    nftData: {
+                        editionInfo: { edition: 'master', masterEdition: undefined },
+                        json: undefined,
+                        metadata: {
+                            collection: null,
+                            data: {
+                                creators: null,
+                                name: 'Test NFT',
+                                sellerFeeBasisPoints: 0,
+                                symbol: 'TEST',
+                            },
+                            editionNonce: null,
+                            isMutable: true,
+                            key: 1,
+                            mint: 'So11111111111111111111111111111111111111112',
+                            primarySaleHappened: false,
+                            tokenStandard: null,
+                            updateAuthority: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+                            uses: null,
+                        },
+                    },
+                    parsed: { type: 'mint' as const },
+                    program: 'spl-token' as const,
+                },
+            },
+        });
+
+        expect(() => {
+            render(<MetaplexFilesCard account={accountWithoutMetadataUri} onNotFound={mockOnNotFound} />);
+        }).toThrow('Not found');
+
+        expect(mockOnNotFound).toHaveBeenCalled();
+    });
+
     it('renders file links with correct href and attributes', async () => {
         const mockFiles = [{ type: 'image/png', uri: 'https://example.com/file1.png' }];
 

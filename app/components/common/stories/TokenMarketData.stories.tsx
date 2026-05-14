@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react';
 import { expect, within } from 'storybook/test';
 
 import * as mockCoingecko from '@/app/__tests__/mock-coingecko';
-import { CoingeckoStatus } from '@/app/utils/coingecko';
+import { CoingeckoStatus } from '@/app/features/token-verification-badge';
 
 import { TokenMarketData } from '../TokenMarketData';
 
@@ -23,7 +23,6 @@ export const Primary: Story = {
             coinInfo: mockCoingecko.coinInfo(),
             status: CoingeckoStatus.Success,
         },
-        tokenInfo: mockCoingecko.tokenInfo(),
     },
     async play({ canvasElement }) {
         expect.assertions(1);
@@ -39,7 +38,6 @@ export const Loading: Story = {
             coinInfo: undefined,
             status: CoingeckoStatus.Loading,
         },
-        tokenInfo: mockCoingecko.tokenInfo(),
     },
     async play({ canvasElement }) {
         expect.assertions(1);

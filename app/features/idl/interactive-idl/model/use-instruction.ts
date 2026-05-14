@@ -1,6 +1,6 @@
 'use client';
 
-import type { InstructionData } from '@entities/idl';
+import { getIdlSpecType, type InstructionData } from '@entities/idl';
 import { useParsedLogs } from '@entities/program-logs';
 import { useWallet } from '@solana/wallet-adapter-react';
 import {
@@ -20,11 +20,14 @@ import { useAtom } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useCluster } from '@/app/providers/cluster';
+import { toBase64 } from '@/app/shared/lib/bytes';
+import { Logger } from '@/app/shared/lib/logger';
 import { clusterUrl } from '@/app/utils/cluster';
 import { getTransactionInstructionError } from '@/app/utils/program-err';
 
 import { programAtom } from '../model/state-atoms';
 import { AnchorInterpreter } from './anchor/anchor-interpreter';
+import { CodamaInterpreter } from './codama/codama-interpreter';
 import { IdlExecutor, populateAccounts, populateArguments } from './idl-executor';
 import type { UnifiedWallet } from './unified-program';
 import { BaseIdl } from './unified-program';
@@ -34,7 +37,7 @@ interface UseInstructionOptions {
     cluster?: string;
     idl?: BaseIdl;
     enabled?: boolean;
-    interpreterName?: typeof AnchorInterpreter.NAME;
+    interpreterName?: typeof AnchorInterpreter.NAME | typeof CodamaInterpreter.NAME;
     commitment?: Finality;
     /** Commitment level for transaction simulation. Defaults to 'processed'. */
     simulationCommitment?: Commitment;
@@ -51,13 +54,13 @@ interface UseInstructionReturn {
         params: {
             accounts: any;
             arguments: Record<string, string>;
-        }
+        },
     ) => Promise<void>;
 
     // Validation helpers
     validateInstruction: (
         instructionName: string,
-        instruction: InstructionData
+        instruction: InstructionData,
     ) => { isValid: boolean; errors: string[] };
 
     // Status
@@ -76,13 +79,14 @@ export function useInstruction({
     cluster,
     idl,
     enabled = true,
-    interpreterName = AnchorInterpreter.NAME,
+    interpreterName: interpreterNameOverride,
     commitment = 'confirmed',
     simulationCommitment = 'processed',
     onSuccess,
     onError,
     onPreInvocationError,
 }: UseInstructionOptions): UseInstructionReturn {
+    const interpreterName = interpreterNameOverride ?? detectInterpreterName(idl);
     const { connected, publicKey, ...wallet } = useWallet();
     const { cluster: currentCluster, customUrl } = useCluster();
 
@@ -110,7 +114,7 @@ export function useInstruction({
     }, [cluster, currentCluster, customUrl]);
 
     /// Allow to create Executor instance and update cluster-dependent connection
-    const executorRef = useRef<IdlExecutor>();
+    const executorRef = useRef<IdlExecutor>(undefined);
     const executor = useMemo(() => {
         if (!executorRef.current) {
             executorRef.current = new IdlExecutor({ connection });
@@ -152,7 +156,7 @@ export function useInstruction({
         } catch (error) {
             const errorMessage = handleInitializeError(error);
 
-            console.error('Program initialization failed:', errorMessage);
+            Logger.error(new Error(errorMessage));
             setInitializationError(errorMessage);
             setProgram(undefined);
         } finally {
@@ -218,7 +222,7 @@ export function useInstruction({
             params: {
                 accounts: any;
                 arguments: Record<string, string>;
-            }
+            },
         ): Promise<void> => {
             if (!connected || !publicKey || !wallet.signTransaction) {
                 const error = 'Wallet not connected';
@@ -242,7 +246,7 @@ export function useInstruction({
                     populateAccounts(params.accounts, instructionName),
                     populateArguments(params.arguments, instructionName),
                     idl,
-                    interpreterName
+                    interpreterName,
                 );
 
                 if (ix instanceof TransactionInstruction) {
@@ -262,7 +266,7 @@ export function useInstruction({
                     new VersionedTransaction(transaction.compileMessage()),
                     {
                         commitment: simulationCommitment,
-                    }
+                    },
                 );
                 handleSimulatedTxResult(simulatedTx);
 
@@ -279,7 +283,7 @@ export function useInstruction({
                         lastValidBlockHeight,
                         signature,
                     },
-                    commitment
+                    commitment,
                 );
 
                 if (confirmed.value?.err) {
@@ -315,7 +319,7 @@ export function useInstruction({
             handleTxEnd,
             handleSimulatedTxResult,
             onPreInvocationError,
-        ]
+        ],
     );
 
     return {
@@ -415,7 +419,7 @@ function useInvocationState({
     };
 
     const handleTxError = (error: unknown | Error, transaction: Transaction | undefined) => {
-        console.error('Instruction execution failed:', { error, transaction });
+        Logger.error(error, { transaction });
         const errorMessage = handleInvokeError(error);
         setLastError({ finishedAt: new Date(), message: errorMessage });
         if (error instanceof SendTransactionError) {
@@ -523,9 +527,20 @@ function handleInvokeError(error: unknown | Error, message = 'Failed to invoke i
 function serializeTransactionMessage(transaction: Transaction | undefined): string | null {
     if (!transaction) return null;
     try {
-        return Buffer.from(transaction.serializeMessage()).toString('base64');
+        return toBase64(transaction.serializeMessage());
     } catch (error) {
-        console.warn('Failed to serialize transaction message:', error);
+        Logger.warn('[idl] Failed to serialize transaction message', { error });
         return null;
     }
+}
+
+/**
+ * Auto-detect the interpreter name based on the IDL type.
+ * Falls back to Anchor interpreter for unknown/missing IDLs.
+ */
+function detectInterpreterName(idl?: BaseIdl): typeof AnchorInterpreter.NAME | typeof CodamaInterpreter.NAME {
+    if (idl && getIdlSpecType(idl) === 'codama') {
+        return CodamaInterpreter.NAME;
+    }
+    return AnchorInterpreter.NAME;
 }

@@ -22,7 +22,14 @@ import { UnknownDetailsCard } from '@components/instruction/UnknownDetailsCard';
 import { VoteDetailsCard } from '@components/instruction/vote/VoteDetailsCard';
 import { isWormholeInstruction } from '@components/instruction/wormhole/types';
 import { WormholeDetailsCard } from '@components/instruction/WormholeDetailsCard';
+import {
+    isZkElGamalProofInstruction,
+    ZkElGamalProofDetailsCard,
+} from '@components/instruction/ZkElGamalProofDetailsCard';
 import { useAnchorProgram } from '@entities/idl';
+import { MetaplexTokenMetadataDetailsCard } from '@features/mpl-token-metadata';
+import { isTokenBatchInstruction, TokenBatchCard } from '@features/token-batch';
+import { MPL_TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 import { useCluster } from '@providers/cluster';
 import { useTransactionDetails, useTransactionStatus } from '@providers/transactions';
 import { useFetchTransactionDetails } from '@providers/transactions/parsed';
@@ -235,37 +242,65 @@ function InstructionCard({
 
     if (isEd25519Instruction(transactionIx)) {
         return <Ed25519DetailsCard key={key} {...props} tx={tx} />;
-    } else if (isMangoInstruction(transactionIx)) {
+    }
+    if (isMangoInstruction(transactionIx)) {
         return <MangoDetailsCard key={key} {...props} />;
-    } else if (isSerumInstruction(transactionIx)) {
+    }
+    if (isSerumInstruction(transactionIx)) {
         return <SerumDetailsCard key={key} {...props} />;
-    } else if (isTokenSwapInstruction(transactionIx)) {
+    }
+    if (isTokenSwapInstruction(transactionIx)) {
         return <TokenSwapDetailsCard key={key} {...props} />;
-    } else if (isTokenLendingInstruction(transactionIx)) {
+    }
+    if (isTokenLendingInstruction(transactionIx)) {
         return <TokenLendingDetailsCard key={key} {...props} />;
-    } else if (isWormholeInstruction(transactionIx)) {
+    }
+    if (isWormholeInstruction(transactionIx)) {
         return <WormholeDetailsCard key={key} {...props} />;
-    } else if (isPythInstruction(transactionIx)) {
+    }
+    if (isPythInstruction(transactionIx)) {
         return <PythDetailsCard key={key} {...props} />;
-    } else if (ComputeBudgetProgram.programId.equals(transactionIx.programId)) {
+    }
+    if (ComputeBudgetProgram.programId.equals(transactionIx.programId)) {
         return <ComputeBudgetDetailsCard key={key} {...props} />;
-    } else if (isLighthouseInstruction(transactionIx)) {
+    }
+    if (isZkElGamalProofInstruction(transactionIx)) {
+        return <ZkElGamalProofDetailsCard key={key} {...props} />;
+    }
+    if (isLighthouseInstruction(transactionIx)) {
         return <LighthouseDetailsCard key={key} {...props} />;
-    } else if (isSolanaAttestationInstruction(transactionIx)) {
+    }
+    if (isTokenBatchInstruction(transactionIx)) {
+        return (
+            <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
+                <TokenBatchCard {...props} />
+            </ErrorBoundary>
+        );
+    }
+    if (isSolanaAttestationInstruction(transactionIx)) {
         return (
             <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
                 <SolanaAttestationDetailsCard {...props} />
             </ErrorBoundary>
         );
-    } else if (programMetadataIdl) {
+    }
+    if (transactionIx.programId.toBase58() === MPL_TOKEN_METADATA_PROGRAM_ID) {
+        return (
+            <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
+                <MetaplexTokenMetadataDetailsCard {...props} />
+            </ErrorBoundary>
+        );
+    }
+    if (programMetadataIdl) {
         return <ProgramMetadataIdlInstructionDetailsCard key={key} {...props} idl={programMetadataIdl} />;
-    } else if (anchorProgram) {
+    }
+    if (anchorProgram) {
         return (
             <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
                 <AnchorDetailsCard anchorProgram={anchorProgram} {...props} />
             </ErrorBoundary>
         );
-    } else {
-        return <UnknownDetailsCard key={key} {...props} />;
     }
+
+    return <UnknownDetailsCard key={key} {...props} />;
 }

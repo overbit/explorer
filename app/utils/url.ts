@@ -23,7 +23,7 @@ export function useClusterPath({ additionalParams, pathname }: Config) {
         () =>
             pickClusterParams(pathnameWithoutHash, currentSearchParams ?? undefined, additionalParams) +
             (hash ? `#${hash}` : ''),
-        [additionalParams, currentSearchParams, hash, pathnameWithoutHash]
+        [additionalParams, currentSearchParams, hash, pathnameWithoutHash],
     );
 }
 
@@ -31,7 +31,7 @@ const MAINNET_MONIKER = clusterSlug(Cluster.MainnetBeta);
 export function pickClusterParams(
     pathname: string,
     currentSearchParams?: { toString(): string; get(key: string): string | null },
-    additionalParams?: { get(key: string): string | null }
+    additionalParams?: { get(key: string): string | null },
 ): string {
     let nextSearchParams: URLSearchParams | undefined;
 
@@ -57,15 +57,16 @@ export function pickClusterParams(
 
     if (additionalParams) {
         nextSearchParams ||= new URLSearchParams();
+        const params = nextSearchParams;
         const additionalParamsObj = new URLSearchParams(additionalParams.toString());
         additionalParamsObj.forEach((value, key) => {
             // Skip mainnet-beta cluster as it's the default
             if (key === 'cluster' && value === MAINNET_MONIKER) {
                 // Remove it if it was added from current params
-                nextSearchParams!.delete('cluster');
+                params.delete('cluster');
                 return;
             }
-            nextSearchParams!.set(key, value); // Override current with additional
+            params.set(key, value); // Override current with additional
         });
     }
     const queryString = nextSearchParams?.toString();

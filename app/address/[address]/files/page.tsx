@@ -1,11 +1,12 @@
 import MetaplexFilesPageClient from './page-client';
 
 type Props = Readonly<{
-    params: {
+    params: Promise<{
         address: string;
-    };
+    }>;
 }>;
 
-export default function MetaplexFilesPage(props: Props) {
-    return <MetaplexFilesPageClient {...props} />;
+export default async function MetaplexFilesPage(props: Props) {
+    const params = await props.params;
+    return <MetaplexFilesPageClient params={params} />;
 }

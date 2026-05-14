@@ -24,6 +24,24 @@
     --tw-ring-offset-color: #fff;
     --tw-ring-color: rgb(201 255 0 / 0.5);
     --tw-ring-width: 0px;
+    --tw-blur: ;
+    --tw-brightness: ;
+    --tw-contrast: ;
+    --tw-grayscale: ;
+    --tw-hue-rotate: ;
+    --tw-invert: ;
+    --tw-saturate: ;
+    --tw-sepia: ;
+    --tw-drop-shadow: ;
+    --tw-backdrop-blur: ;
+    --tw-backdrop-brightness: ;
+    --tw-backdrop-contrast: ;
+    --tw-backdrop-grayscale: ;
+    --tw-backdrop-hue-rotate: ;
+    --tw-backdrop-invert: ;
+    --tw-backdrop-opacity: ;
+    --tw-backdrop-saturate: ;
+    --tw-backdrop-sepia: ;
 }
 
 /* port existing card components as is from Dashkit */
@@ -87,6 +105,10 @@
         opacity: 0;
         animation: 0.75s linear infinite spinner-grow;
     }
+    .e-spinner-grow-xs {
+        width: 0.5rem;
+        height: 0.5rem;
+    }
     .e-spinner-grow-sm {
         width: 1rem;
         height: 1rem;
@@ -115,5 +137,11 @@
 @media (max-width: 767px) {
     .max-md\:e-hidden {
         display: none;
+    }
+}
+
+@layer components {
+    .zigzag {
+        mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50%/21px 100%;
     }
 }

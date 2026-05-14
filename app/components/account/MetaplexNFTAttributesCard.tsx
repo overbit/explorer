@@ -23,7 +23,7 @@ export function MetaplexNFTAttributesCard({ account, onNotFound }: { account?: A
         }
         return onNotFound();
     }
-    return <NormalMetaplexNFTAttributesCard metadataUri={parsedData.nftData.metadata.data.uri} />;
+    return <NormalMetaplexNFTAttributesCard metadataUri={parsedData.nftData.metadata.uri} />;
 }
 
 function NormalMetaplexNFTAttributesCard({ metadataUri }: { metadataUri: string }) {
@@ -51,7 +51,7 @@ function NormalMetaplexNFTAttributesCard({ metadataUri }: { metadataUri: string 
             } else {
                 throw new Error('Attributes is not an array');
             }
-        } catch (error) {
+        } catch (_error) {
             setStatus('error');
         }
     }

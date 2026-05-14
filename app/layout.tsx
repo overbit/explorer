@@ -1,7 +1,9 @@
 import './scss/theme-dark.scss';
+import './styles.css';
 
 import { ClusterModal } from '@components/ClusterModal';
 import { ClusterStatusButton } from '@components/ClusterStatusButton';
+import { Footer } from '@components/Footer';
 import { MessageBanner } from '@components/MessageBanner';
 import { Navbar } from '@components/Navbar';
 import { ClusterProvider } from '@providers/cluster';
@@ -10,15 +12,16 @@ import { Toaster } from '@shared/ui/sonner/toaster';
 import { isEnvEnabled } from '@utils/env';
 import { BotIdClient } from 'botid/client';
 import type { Viewport } from 'next';
-import dynamic from 'next/dynamic';
 import { Rubik } from 'next/font/google';
 import { Metadata } from 'next/types';
+import { Suspense } from 'react';
+
+import { SearchBar } from '@/app/components/SearchBarLoader';
+import { TokenInfoBatchProvider } from '@/app/entities/token-info';
+import { CookieConsent } from '@/app/features/cookie';
+import { VisibilityProvider } from '@/app/shared/lib/visibility';
 
 import { botIdProtectedRoutes } from '../middleware';
-
-const SearchBar = dynamic(() => import('@components/SearchBar'), {
-    ssr: false,
-});
 
 export const metadata: Metadata = {
     description: 'Inspect transactions, accounts, blocks, and more on the Solana blockchain',
@@ -51,26 +54,36 @@ export default function RootLayout({ analytics, children }: { analytics: React.R
                 />
             </head>
             <body>
-                <ScrollAnchorProvider>
-                    <ClusterProvider>
-                        <ClusterModal />
-                        <div className="main-content pb-4">
-                            <Navbar>
-                                <SearchBar />
-                            </Navbar>
-                            <MessageBanner />
-                            <div className="container my-3 d-xl-none">
-                                <SearchBar />
-                            </div>
-                            <div className="container my-3 d-lg-none">
-                                <ClusterStatusButton />
-                            </div>
-                            {children}
-                        </div>
-                        <Toaster position="bottom-center" toastOptions={{ duration: 5_000 }} />
-                    </ClusterProvider>
-                </ScrollAnchorProvider>
+                <Suspense fallback={null}>
+                    <ScrollAnchorProvider>
+                        <ClusterProvider>
+                            <VisibilityProvider>
+                                <TokenInfoBatchProvider>
+                                    <ClusterModal />
+                                    <div className="e-flex e-min-h-screen e-flex-col">
+                                        <div className="main-content pb-4 e-flex-1">
+                                            <Navbar>
+                                                <SearchBar />
+                                            </Navbar>
+                                            <MessageBanner />
+                                            <div className="container my-3 d-xl-none">
+                                                <SearchBar />
+                                            </div>
+                                            <div className="container my-3 d-lg-none">
+                                                <ClusterStatusButton />
+                                            </div>
+                                            {children}
+                                        </div>
+                                        <Footer />
+                                    </div>
+                                    <Toaster position="bottom-center" toastOptions={{ duration: 5_000 }} />
+                                </TokenInfoBatchProvider>
+                            </VisibilityProvider>
+                        </ClusterProvider>
+                    </ScrollAnchorProvider>
+                </Suspense>
                 {analytics}
+                <CookieConsent />
             </body>
         </html>
     );

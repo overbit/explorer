@@ -18,6 +18,9 @@ import { extractEventsFromLogs } from '@utils/program-logs';
 import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp, CornerDownRight } from 'react-feather';
 
+import { toBase64 } from '@/app/shared/lib/bytes';
+import { invariant } from '@/app/shared/lib/invariant';
+
 import { InstructionCard } from './InstructionCard';
 import { ProgramEventsCard } from './ProgramEventsCard';
 
@@ -74,17 +77,18 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
         let ixDef: IdlInstruction | undefined;
         if (anchorProgram) {
             let coder: BorshInstructionCoder | BorshEventCoder;
+            const encodedInstructionData = toBase64(ix.data.slice(8));
             if (instructionIsSelfCPI(ix.data)) {
                 // Try custom discriminator decoder first (handles variable-length discriminators)
-                decodedIxData = decodeEventWithCustomDiscriminator(ix.data.slice(8).toString('base64'), anchorProgram);
+                decodedIxData = decodeEventWithCustomDiscriminator(encodedInstructionData, anchorProgram);
 
                 // Fallback to standard Anchor event decoder
                 if (!decodedIxData) {
                     coder = new BorshEventCoder(anchorProgram.idl);
-                    decodedIxData = coder.decode(ix.data.slice(8).toString('base64'));
+                    decodedIxData = coder.decode(encodedInstructionData);
                 }
                 const ixEventDef = anchorProgram.idl.events?.find(
-                    ixDef => ixDef.name === decodedIxData?.name
+                    ixDef => ixDef.name === decodedIxData?.name,
                 ) as IdlEvent;
 
                 const ixEventFields = anchorProgram.idl.types?.find((type: any) => type.name === ixEventDef.name);
@@ -208,7 +212,7 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
                                 // Render group header
                                 const groupHeaderIndex = accountInfoIndex;
                                 const isExpanded = !collapsedGroups.has(groupHeaderIndex);
-                                skipUntilLevel = isExpanded ? null : currentInfo.nestingLevel ?? 0;
+                                skipUntilLevel = isExpanded ? null : (currentInfo.nestingLevel ?? 0);
 
                                 rows.push(
                                     <tr key={`group-${groupHeaderIndex}`} className="table-group-header">
@@ -228,7 +232,7 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
                                                 )}
                                             </div>
                                         </td>
-                                    </tr>
+                                    </tr>,
                                 );
                                 accountInfoIndex++;
                             } else {
@@ -239,8 +243,12 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
                     }
 
                     // Get the account info for this actual account
-                    const accountInfo =
-                        accountMap.has(keyIndex) && ixAccounts ? ixAccounts[accountMap.get(keyIndex)!] : null;
+                    let accountInfo: FlattenedIdlAccount | null = null;
+                    if (accountMap.has(keyIndex) && ixAccounts) {
+                        const mappedIndex = accountMap.get(keyIndex);
+                        invariant(mappedIndex !== undefined, 'accountMap.has(keyIndex) guarantees the mapped index');
+                        accountInfo = ixAccounts[mappedIndex];
+                    }
 
                     // Skip nested accounts if parent group is collapsed
                     if (
@@ -270,8 +278,8 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
                                         {accountInfo
                                             ? `${camelToTitleCase(accountInfo.name)}`
                                             : ixAccounts
-                                            ? `Remaining Account #${keyIndex + 1 - actualAccountCount}`
-                                            : `Account #${keyIndex + 1}`}
+                                              ? `Remaining Account #${keyIndex + 1 - actualAccountCount}`
+                                              : `Account #${keyIndex + 1}`}
                                     </div>
                                     {isWritable && <span className="badge bg-danger-soft me-1">Writable</span>}
                                     {isSigner && <span className="badge bg-info-soft me-1">Signer</span>}
@@ -280,7 +288,7 @@ function AnchorDetails({ ix, anchorProgram }: { ix: TransactionInstruction; anch
                             <td className="text-lg-end" colSpan={2}>
                                 <Address pubkey={pubkey} alignRight link />
                             </td>
-                        </tr>
+                        </tr>,
                     );
 
                     accountInfoIndex++;

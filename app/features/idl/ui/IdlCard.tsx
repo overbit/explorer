@@ -1,12 +1,15 @@
 'use client';
-import { getIdlVersion, type SupportedIdl, useAnchorProgram } from '@entities/idl';
-import { useProgramMetadataIdl } from '@entities/program-metadata';
+import { getIdlVersion, isIdlProgramIdMismatch, type SupportedIdl, useAnchorProgram } from '@entities/idl';
+import { useProgramMetadataCodamaIdl, useProgramMetadataIdl } from '@entities/program-metadata';
 import { useCluster } from '@providers/cluster';
 import { Badge } from '@shared/ui/badge';
 import { cn } from '@shared/utils';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ExternalLink } from 'react-feather';
 
+import { clusterSlug } from '@/app/utils/cluster';
+
+import { BaseWarningCard } from '../interactive-idl/ui/BaseWarningCard';
 import { IdlVariant, useIdlLastTransactionDate } from '../model/use-idl-last-transaction-date';
 import { IdlInstructionSection } from './IdlInstructionSection';
 import { IdlSection } from './IdlSection';
@@ -20,8 +23,10 @@ type IdlTab = {
 
 export function IdlCard({ programId }: { programId: string }) {
     const { url, cluster } = useCluster();
+    const network = clusterSlug(cluster);
     const { idl } = useAnchorProgram(programId, url, cluster);
     const { programMetadataIdl } = useProgramMetadataIdl(programId, url, cluster);
+    const { codamaIdl } = useProgramMetadataCodamaIdl(programId, url, cluster);
     const [activeTabIndex, setActiveTabIndex] = useState<number>();
     const [searchStr, setSearchStr] = useState<string>('');
 
@@ -56,8 +61,18 @@ export function IdlCard({ programId }: { programId: string }) {
             }
         }
 
+        // Optionally add codama tab
+        if (codamaIdl) {
+            idlTabs.push({
+                badge: 'Codama IDL',
+                id: IdlVariant.Codama,
+                idl: codamaIdl,
+                title: 'Codama',
+            });
+        }
+
         return idlTabs;
-    }, [idl, programMetadataIdl, preferredIdlVariant]);
+    }, [idl, programMetadataIdl, codamaIdl, preferredIdlVariant]);
 
     useEffect(() => {
         // Activate first tab when tabs are available
@@ -107,6 +122,8 @@ export function IdlCard({ programId }: { programId: string }) {
     }
 
     const activeTab = tabs[activeTabIndex];
+    const isMismatch = isIdlProgramIdMismatch(activeTab.idl, programId);
+
     return (
         <div className="card">
             <div className="card-header">
@@ -130,20 +147,29 @@ export function IdlCard({ programId }: { programId: string }) {
                 </div>
             </div>
             <div className="card-body">
-                <IdlSection
-                    badge={
-                        <Badge
-                            size="xs"
-                            variant={getIdlVersion(activeTab.idl) === 'Legacy' ? 'destructive' : 'success'}
-                        >
-                            {getIdlVersion(activeTab.idl)} {activeTab.badge}
-                        </Badge>
-                    }
-                    idl={activeTab.idl}
-                    programId={programId}
-                    searchStr={searchStr}
-                    onSearchChange={setSearchStr}
-                />
+                {isMismatch ? (
+                    <BaseWarningCard
+                        message="IDL Program ID Mismatch"
+                        description="The program address in this IDL does not match the program being viewed. The IDL content is hidden to prevent interaction with a potentially fraudulent IDL."
+                    />
+                ) : (
+                    <IdlSection
+                        badge={
+                            <Badge
+                                size="xs"
+                                variant={getIdlVersion(activeTab.idl) === 'Legacy' ? 'destructive' : 'success'}
+                            >
+                                {getIdlVersion(activeTab.idl)} {activeTab.badge}
+                            </Badge>
+                        }
+                        idl={activeTab.idl}
+                        idlSource={activeTab.id}
+                        network={network}
+                        programId={programId}
+                        searchStr={searchStr}
+                        onSearchChange={setSearchStr}
+                    />
+                )}
             </div>
         </div>
     );

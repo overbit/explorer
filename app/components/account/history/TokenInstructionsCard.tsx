@@ -54,7 +54,7 @@ export function TokenInstructionsCard({ address }: { address: string }) {
                     instructions.push(instruction);
                 }
                 instructions.push(
-                    ...inner.filter(instruction => isRelevantInstruction(pubkey, address, mintMap, instruction))
+                    ...inner.filter(instruction => isRelevantInstruction(pubkey, address, mintMap, instruction)),
                 );
             });
 
@@ -85,7 +85,7 @@ export function TokenInstructionsCard({ address }: { address: string }) {
                             <td>
                                 <span className={`badge bg-${statusClass}-soft`}>{statusText}</span>
                             </td>
-                        </tr>
+                        </tr>,
                     );
                 }
             });
@@ -112,7 +112,12 @@ export function TokenInstructionsCard({ address }: { address: string }) {
     const fetching = history.status === FetchStatus.Fetching;
     return (
         <div className="card">
-            <HistoryCardHeader fetching={fetching} refresh={() => refresh()} title="Token Instructions" />
+            <HistoryCardHeader
+                fetching={fetching}
+                refresh={() => refresh()}
+                title="Token Instructions"
+                analyticsSection="token_instructions_header"
+            />
             <div className="table-responsive mb-0">
                 <table className="table table-sm table-nowrap card-table">
                     <thead>
@@ -136,15 +141,15 @@ function isRelevantInstruction(
     pubkey: PublicKey,
     address: string,
     mintMap: Map<string, MintDetails>,
-    instruction: ParsedInstruction | PartiallyDecodedInstruction
+    instruction: ParsedInstruction | PartiallyDecodedInstruction,
 ) {
     if ('accounts' in instruction) {
         return instruction.accounts.some(
-            account => account.equals(pubkey) || mintMap.get(account.toBase58())?.mint === address
+            account => account.equals(pubkey) || mintMap.get(account.toBase58())?.mint === address,
         );
     } else if (typeof instruction.parsed === 'object' && 'info' in instruction.parsed) {
         return Object.values(instruction.parsed.info).some(
-            value => value === address || (typeof value === 'string' && mintMap.get(value)?.mint === address)
+            value => value === address || (typeof value === 'string' && mintMap.get(value)?.mint === address),
         );
     }
     return false;

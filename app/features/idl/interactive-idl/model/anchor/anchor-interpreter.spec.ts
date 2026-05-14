@@ -2,6 +2,8 @@ import { PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import { describe, expect, it, vi } from 'vitest';
 
+import { fromUtf8 } from '@/app/shared/lib/bytes';
+
 import { AnchorInterpreter } from './anchor-interpreter';
 import { AnchorUnifiedProgram } from './anchor-program';
 
@@ -105,7 +107,7 @@ describe('AnchorInterpreter', () => {
                     payer: new PublicKey('11111111111111111111111111111111'),
                     tokenAccount: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
                 },
-                [new BN('1000'), true, 'Hello World', new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')]
+                [new BN('1000'), true, 'Hello World', new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')],
             );
         });
 
@@ -145,7 +147,7 @@ describe('AnchorInterpreter', () => {
                     optionalAccount: null,
                     payer: new PublicKey('11111111111111111111111111111111'),
                 },
-                []
+                [],
             );
         });
 
@@ -282,7 +284,7 @@ describe('AnchorInterpreter', () => {
             await interpreter.createInstruction(mockProgram, 'bytesInstruction', accounts, args);
 
             expect(mockBuildInstruction).toHaveBeenCalledWith('bytesInstruction', {}, [
-                Buffer.from(testData),
+                fromUtf8(testData),
                 'test message',
             ]);
         });
@@ -327,7 +329,7 @@ describe('AnchorInterpreter', () => {
             } as unknown as AnchorUnifiedProgram;
 
             await expect(interpreter.createInstruction(mockProgram, 'nonExistentInstruction', {}, [])).rejects.toThrow(
-                'Instruction definition not found for "nonExistentInstruction"'
+                'Instruction definition not found for "nonExistentInstruction"',
             );
         });
 
@@ -348,7 +350,7 @@ describe('AnchorInterpreter', () => {
             } as unknown as AnchorUnifiedProgram;
 
             await expect(
-                interpreter.createInstruction(mockProgram, 'testInstruction', {}, ['100', '200', 'extra'])
+                interpreter.createInstruction(mockProgram, 'testInstruction', {}, ['100', '200', 'extra']),
             ).rejects.toThrow('Argument at index 2 not found in instruction definition');
         });
 
@@ -367,12 +369,12 @@ describe('AnchorInterpreter', () => {
             } as unknown as AnchorUnifiedProgram;
 
             const accounts = {};
-            const customData = Buffer.from('encoded transaction data');
+            const customData = 'encoded transaction data';
             const args = [customData];
 
             await interpreter.createInstruction(mockProgram, 'definedTypeInstruction', accounts, args);
 
-            expect(mockBuildInstruction).toHaveBeenCalledWith('definedTypeInstruction', {}, [customData]);
+            expect(mockBuildInstruction).toHaveBeenCalledWith('definedTypeInstruction', {}, [fromUtf8(customData)]);
         });
 
         it('should handle nested vector types', async () => {
