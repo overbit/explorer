@@ -63,7 +63,7 @@ function NormalMetaplexFilesCard({ metadataUri }: { metadataUri: string }) {
                 } else {
                     throw new Error('Files is not an array');
                 }
-            } catch (error) {
+            } catch (_error) {
                 setStatus('error');
             }
         }

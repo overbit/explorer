@@ -145,6 +145,7 @@ function MemoField({ memo }: { memo: string }) {
     const [showTooltip, setShowTooltip] = React.useState(false);
     const truncateLength = 25;
     // Remove memo length like "[15] " from the memo for display (handles all occurrences)
+    // eslint-disable-next-line no-restricted-syntax -- Regex is needed to strip repeated "[<len>]" memo prefixes from RPC memo strings.
     const cleanMemo = memo.replace(/\[\d+\]\s*/g, '').trim();
     const isTruncated = cleanMemo.length > truncateLength;
     const displayText = isTruncated ? `${cleanMemo.slice(0, truncateLength)}...` : cleanMemo;
