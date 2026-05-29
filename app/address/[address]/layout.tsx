@@ -47,6 +47,7 @@ import { SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS as SAS_PROGRAM_ID } from 'sa
 import useSWRImmutable from 'swr/immutable';
 
 import { CompressedNftCard } from '@/app/components/account/CompressedNftCard';
+import { ManifestAccountSection } from '@/app/components/account/manifest/ManifestAccountSection';
 import { SolanaAttestationServiceCard } from '@/app/components/account/sas/SolanaAttestationCard';
 import { hasTokenMetadata } from '@/app/features/metadata';
 import { useCompressedNft } from '@/app/providers/compressed-nft';
@@ -55,6 +56,7 @@ import { type NavigationTab, NavigationTabLink, NavigationTabs } from '@/app/sha
 import { StickyHeader } from '@/app/shared/ui/sticky-header/StickyHeader';
 import { isAttestationAccount } from '@/app/utils/attestation-service';
 import { getFeatureInfo, useFeatureInfo } from '@/app/utils/feature-gate/utils';
+import { decodeManifestAccount, isManifestProgramId } from '@/app/utils/manifest';
 import {
     fetchFullTokenInfo,
     FullTokenInfo,
@@ -307,6 +309,8 @@ function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: Ful
         return <AddressLookupTableAccountSection account={account} lookupTableAccount={parsedData.parsed.info} />;
     } else if (rawData && isAddressLookupTableAccount(account.owner.toBase58() as Address, rawData)) {
         return <AddressLookupTableAccountSection account={account} data={rawData} />;
+    } else if (rawData && isManifestProgramId(account.owner) && decodeManifestAccount(rawData)) {
+        return <ManifestAccountSection account={account} data={rawData} />;
     } else if (featureInfo || account.owner.toBase58() === FEATURE_PROGRAM_ID) {
         return <FeatureAccountSection account={account} />;
     } else if (account.owner.toBase58() === SAS_PROGRAM_ID) {

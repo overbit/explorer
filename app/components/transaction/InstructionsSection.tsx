@@ -49,6 +49,7 @@ import React from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { useProgramMetadataIdl } from '@/app/entities/program-metadata';
+import { isManifestProgramId, isManifestWrapperProgramId } from '@/app/utils/manifest';
 
 import AnchorDetailsCard from '../instruction/AnchorDetailsCard';
 import { Ed25519DetailsCard } from '../instruction/ed25519/Ed25519DetailsCard';
@@ -56,6 +57,7 @@ import { isEd25519Instruction } from '../instruction/ed25519/types';
 import { LighthouseDetailsCard } from '../instruction/lighthouse/LighthouseDetailsCard';
 import { isLighthouseInstruction } from '../instruction/lighthouse/types';
 import { isMangoInstruction } from '../instruction/mango/types';
+import { ManifestDetailsCard } from '../instruction/manifest/ManifestDetailsCard';
 import { ProgramMetadataIdlInstructionDetailsCard } from '../instruction/program-metadata-idl/ProgramMetadataIdlInstructionDetailsCard';
 import {
     isSolanaAttestationInstruction,
@@ -284,6 +286,13 @@ function InstructionCard({
         return (
             <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
                 <SolanaAttestationDetailsCard {...props} />
+            </ErrorBoundary>
+        );
+    }
+    if (isManifestProgramId(transactionIx.programId) || isManifestWrapperProgramId(transactionIx.programId)) {
+        return (
+            <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
+                <ManifestDetailsCard {...props} />
             </ErrorBoundary>
         );
     }
