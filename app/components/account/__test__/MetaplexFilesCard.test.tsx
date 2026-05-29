@@ -82,14 +82,14 @@ describe('MetaplexFilesCard', () => {
         throw new Error('Not found');
     });
 
-    it('shows loading card initially', () => {
+    it('should shows loading card initially', () => {
         const mockAccount = createMockAccount();
         render(<MetaplexFilesCard account={mockAccount} onNotFound={mockOnNotFound} />);
 
         expect(screen.getByTestId('loading-card')).toBeInTheDocument();
     });
 
-    it('renders files table when fetch is successful', async () => {
+    it('should renders files table when fetch is successful', async () => {
         const mockFiles = [
             { type: 'image/png', uri: 'https://example.com/file1.png' },
             { type: 'image/jpeg', uri: 'https://example.com/file2.jpg' },
@@ -122,7 +122,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.getByText('image/jpeg')).toBeInTheDocument();
     });
 
-    it('shows error card when fetch fails', async () => {
+    it('should shows error card when fetch fails', async () => {
         mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
         const mockAccount = createMockAccount();
@@ -135,7 +135,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.getByText('Failed to fetch files')).toBeInTheDocument();
     });
 
-    it('shows error when files property is not an array', async () => {
+    it('should shows error when files property is not an array', async () => {
         mockFetch.mockResolvedValueOnce({
             json: () =>
                 Promise.resolve({
@@ -156,7 +156,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.getByText('Failed to fetch files')).toBeInTheDocument();
     });
 
-    it('filters out invalid file objects', async () => {
+    it('should filters out invalid file objects', async () => {
         const mockFiles = [
             { type: 'image/png', uri: 'https://example.com/valid.png' },
             { type: null, uri: 'invalid' }, // invalid type
@@ -190,7 +190,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.queryByText('invalid')).not.toBeInTheDocument();
     });
 
-    it('calls onNotFound when account data is invalid', () => {
+    it('should calls onNotFound when account data is invalid', () => {
         const invalidAccount = createMockAccount({
             data: {
                 parsed: {
@@ -207,7 +207,7 @@ describe('MetaplexFilesCard', () => {
         expect(mockOnNotFound).toHaveBeenCalled();
     });
 
-    it('calls onNotFound when account is undefined', () => {
+    it('should calls onNotFound when account is undefined', () => {
         expect(() => {
             render(<MetaplexFilesCard account={undefined} onNotFound={mockOnNotFound} />);
         }).toThrow('Not found');
@@ -215,7 +215,7 @@ describe('MetaplexFilesCard', () => {
         expect(mockOnNotFound).toHaveBeenCalled();
     });
 
-    it('calls onNotFound when parsed NFT metadata uri is missing', () => {
+    it('should calls onNotFound when parsed NFT metadata uri is missing', () => {
         const accountWithoutMetadataUri = createMockAccount({
             data: {
                 parsed: {
@@ -253,7 +253,7 @@ describe('MetaplexFilesCard', () => {
         expect(mockOnNotFound).toHaveBeenCalled();
     });
 
-    it('renders file links with correct href and attributes', async () => {
+    it('should renders file links with correct href and attributes', async () => {
         const mockFiles = [{ type: 'image/png', uri: 'https://example.com/file1.png' }];
 
         mockFetch.mockResolvedValueOnce({
@@ -279,7 +279,7 @@ describe('MetaplexFilesCard', () => {
         expect(fileLink).toHaveAttribute('rel', 'noopener noreferrer');
     });
 
-    it('handles compressed NFT when regular NFT data is not available', () => {
+    it('should handles compressed NFT when regular NFT data is not available', () => {
         mockUseCompressedNft.mockReturnValue({
             compression: {
                 asset_hash: 'hash3',
@@ -320,7 +320,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.getByTestId('loading-card')).toBeInTheDocument();
     });
 
-    it('handles empty files array', async () => {
+    it('should handles empty files array', async () => {
         mockFetch.mockResolvedValueOnce({
             json: () =>
                 Promise.resolve({
@@ -346,7 +346,7 @@ describe('MetaplexFilesCard', () => {
         expect(fileRows).toHaveLength(1); // Only header row
     });
 
-    it('uses proxied URI for metadata fetch', async () => {
+    it('should uses proxied URI for metadata fetch', async () => {
         const mockFiles = [{ type: 'image/png', uri: 'https://example.com/file1.png' }];
 
         mockFetch.mockResolvedValueOnce({
@@ -370,7 +370,7 @@ describe('MetaplexFilesCard', () => {
         expect(mockFetch).toHaveBeenCalledWith('https://example.com/metadata.json');
     });
 
-    it('handles missing properties in metadata', async () => {
+    it('should handles missing properties in metadata', async () => {
         mockFetch.mockResolvedValueOnce({
             json: () =>
                 Promise.resolve({
@@ -389,7 +389,7 @@ describe('MetaplexFilesCard', () => {
         expect(screen.getByText('Failed to fetch files')).toBeInTheDocument();
     });
 
-    it('creates unique keys for file rows', async () => {
+    it('should creates unique keys for file rows', async () => {
         const mockFiles = [
             { type: 'image/png', uri: 'https://example.com/file1.png' },
             { type: 'image/png', uri: 'https://example.com/file2.png' },

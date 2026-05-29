@@ -106,12 +106,18 @@ export function ManifestDetailsCard(props: {
     );
 }
 
-function ManifestEventsCard({ eventDataList, instructionIndex }: { eventDataList: string[]; instructionIndex: number }) {
+function ManifestEventsCard({
+    eventDataList,
+    instructionIndex,
+}: {
+    eventDataList: string[];
+    instructionIndex: number;
+}) {
     const decodedEvents = eventDataList
         .map(rawEventData => ({ event: decodeManifestEvent(rawEventData), rawEventData }))
         .filter((entry): entry is { event: ManifestDecodedAccount; rawEventData: string } => entry.event !== undefined);
 
-    if (decodedEvents.length === 0) return null;
+    if (decodedEvents.length === 0) return undefined;
 
     return (
         <>

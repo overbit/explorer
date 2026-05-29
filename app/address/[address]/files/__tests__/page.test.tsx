@@ -11,7 +11,7 @@ vi.mock('../page-client', () => ({
 }));
 
 describe('MetaplexFilesPage', () => {
-    it('renders the page with correct props', () => {
+    it('should renders the page with correct props', () => {
         const props = {
             params: {
                 address: 'DemoKeypair1111111111111111111111111111111111',
@@ -26,7 +26,7 @@ describe('MetaplexFilesPage', () => {
         ).toBeInTheDocument();
     });
 
-    it('passes address parameter correctly', () => {
+    it('should passes address parameter correctly', () => {
         const testAddress = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
         const props = {
             params: {

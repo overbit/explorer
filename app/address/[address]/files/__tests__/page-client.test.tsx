@@ -52,7 +52,7 @@ vi.mock('@components/account/MetaplexFilesCard', () => ({
 }));
 
 describe('MetaplexFilesPageClient', () => {
-    it('renders ParsedAccountRenderer with correct address', () => {
+    it('should renders ParsedAccountRenderer with correct address', () => {
         const testAddress = 'DemoKeypair1111111111111111111111111111111111';
         const props = {
             params: {
@@ -65,7 +65,7 @@ describe('MetaplexFilesPageClient', () => {
         expect(screen.getByTestId('parsed-account-renderer')).toBeInTheDocument();
     });
 
-    it('renders MetaplexFilesCard within Suspense boundary', async () => {
+    it('should renders MetaplexFilesCard within Suspense boundary', async () => {
         const testAddress = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
         const props = {
             params: {
@@ -80,7 +80,7 @@ describe('MetaplexFilesPageClient', () => {
         });
     });
 
-    it('renders the correct component structure', () => {
+    it('should renders the correct component structure', () => {
         const testAddress = 'DemoKeypair1111111111111111111111111111111111';
         const props = {
             params: {

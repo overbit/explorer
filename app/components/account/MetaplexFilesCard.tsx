@@ -48,15 +48,13 @@ function NormalMetaplexFilesCard({ metadataUri }: { metadataUri: string }) {
                     throw new Error('Failed to fetch metadata');
                 }
 
-                const metadata = await response.json();
-                // Verify if the attributes value is an array
-                if (Array.isArray(metadata.properties.files)) {
+                const metadata: unknown = await response.json();
+                const properties = getObjectProperty(metadata, 'properties');
+                const metadataFiles = getObjectProperty(properties, 'files');
+
+                if (Array.isArray(metadataFiles)) {
                     // Filter files to keep objects matching schema
-                    const filteredFiles = metadata.properties.files.filter((file: any) => {
-                        return (
-                            typeof file === 'object' && typeof file.uri === 'string' && typeof file.type === 'string'
-                        );
-                    });
+                    const filteredFiles = metadataFiles.filter(isFileEntry);
 
                     setFiles(filteredFiles);
                     setStatus('success');
@@ -109,4 +107,20 @@ function NormalMetaplexFilesCard({ metadataUri }: { metadataUri: string }) {
             </div>
         </div>
     );
+}
+
+function getObjectProperty(value: unknown, key: string): unknown {
+    if (typeof value === 'object' && value) {
+        return Reflect.get(value, key);
+    }
+
+    return undefined;
+}
+
+function isFileEntry(value: unknown): value is File {
+    if (typeof value !== 'object' || !value) {
+        return false;
+    }
+
+    return typeof Reflect.get(value, 'uri') === 'string' && typeof Reflect.get(value, 'type') === 'string';
 }

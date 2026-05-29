@@ -13,7 +13,7 @@ import {
 } from '../manifest';
 
 describe('Manifest account decoding', () => {
-    it('matches Manifest state discriminators', () => {
+    it('should matches Manifest state discriminators', () => {
         const marketDiscriminator = genManifestAccountDiscriminator('manifest::state::market::MarketFixed');
         const globalDiscriminator = genManifestAccountDiscriminator('manifest::state::global::GlobalFixed');
 
@@ -21,7 +21,7 @@ describe('Manifest account decoding', () => {
         expect(Buffer.from(globalDiscriminator).toString('hex')).toBe('01aa972fbba0b495');
     });
 
-    it('decodes the fixed header of a market account', () => {
+    it('should decodes the fixed header of a market account', () => {
         const data = new Uint8Array(256);
         const view = new DataView(data.buffer);
         const baseMint = new PublicKey('So11111111111111111111111111111111111111112');
@@ -44,7 +44,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.fields.find(field => field.name === 'orderSequenceNumber')?.value).toBe('42');
     });
 
-    it('decodes log accounts after the first eight discriminator bytes', () => {
+    it('should decodes log accounts after the first eight discriminator bytes', () => {
         const data = new Uint8Array(8 + 72);
         const view = new DataView(data.buffer);
         const market = new PublicKey('2UuFPdNoKhD1wKqXdNxiWbS3B5wQ9DgxtstNVwZ5jbS4');
@@ -63,7 +63,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.fields.find(field => field.name === 'orderSequenceNumber')?.value).toBe('7');
     });
 
-    it('decodes emitted Manifest event data from base64', () => {
+    it('should decodes emitted Manifest event data from base64', () => {
         const data = new Uint8Array(8 + 72);
         const view = new DataView(data.buffer);
         const market = new PublicKey('2UuFPdNoKhD1wKqXdNxiWbS3B5wQ9DgxtstNVwZ5jbS4');
@@ -80,7 +80,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.fields.find(field => field.name === 'orderSequenceNumber')?.value).toBe('11');
     });
 
-    it('decodes Manifest instruction data and coption args', () => {
+    it('should decodes Manifest instruction data and coption args', () => {
         const data = new Uint8Array(1 + 8 + 1 + 4);
         const view = new DataView(data.buffer);
 
@@ -105,7 +105,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.args.find(field => field.name === 'traderIndexHint')).toBeUndefined();
     });
 
-    it('decodes observed Manifest wrapper deposit data', () => {
+    it('should decodes observed Manifest wrapper deposit data', () => {
         const data = fromHex('02002d310100000000');
 
         const decoded = decodeManifestWrapperInstruction(data);
@@ -124,7 +124,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.args.find(field => field.name === 'params.amountAtoms')?.value).toBe('20000000');
     });
 
-    it('decodes observed Manifest wrapper batch update data', () => {
+    it('should decodes observed Manifest wrapper batch update data', () => {
         const data = fromHex('04000000000001000000e803000000000000002d310100000000008c8647f7000000000000');
 
         const decoded = decodeManifestWrapperInstruction(data);
@@ -141,7 +141,7 @@ describe('Manifest account decoding', () => {
         expect(decoded?.args.find(field => field.name === 'orders[0].orderType')?.value).toBe('Limit');
     });
 
-    it('decodes observed Manifest UI wrapper create data', () => {
+    it('should decodes observed Manifest UI wrapper create data', () => {
         const data = fromHex('00');
 
         const decoded = decodeManifestWrapperInstruction(data, MANIFEST_UI_WRAPPER_PROGRAM_ID);
@@ -155,7 +155,7 @@ describe('Manifest account decoding', () => {
         ]);
     });
 
-    it('decodes observed Manifest UI wrapper place order data', () => {
+    it('should decodes observed Manifest UI wrapper place order data', () => {
         const data = fromHex('02e8030000000000008096980000000000002f6859f7000000000000');
 
         const decoded = decodeManifestWrapperInstruction(data, MANIFEST_UI_WRAPPER_PROGRAM_ID);

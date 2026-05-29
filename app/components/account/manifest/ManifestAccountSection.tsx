@@ -12,7 +12,7 @@ export function ManifestAccountSection({ account, data }: { account: Account; da
     const refresh = useRefreshAccount();
     const decoded = React.useMemo(() => decodeManifestAccount(data), [data]);
 
-    if (!decoded) return null;
+    if (!decoded) return undefined;
 
     return (
         <AccountCard

@@ -112,7 +112,15 @@ type TransactionRowProps = {
     hasTimestamps: boolean;
 };
 
-function TransactionRow({ signature, slot, blockTime, statusClass, statusText, memo, hasTimestamps }: TransactionRowProps) {
+function TransactionRow({
+    signature,
+    slot,
+    blockTime,
+    statusClass,
+    statusText,
+    memo,
+    hasTimestamps,
+}: TransactionRowProps) {
     const instructionNames = useInstructionNames(signature);
 
     return (
