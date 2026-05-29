@@ -3,15 +3,14 @@
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { SignatureContext } from '@components/instruction/SignatureContext';
-import { useExplorerLink } from '@entities/cluster';
+import { buildExplorerLink, useExplorerLink } from '@entities/cluster';
 import { FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
 import { useFetchTransactionStatus, useTransactionDetails, useTransactionStatus } from '@providers/transactions';
 import { useFetchTransactionDetails } from '@providers/transactions/parsed';
 import { NATIVE_MINT } from '@solana/spl-token';
 import { TransactionSignature } from '@solana/web3.js';
-import { ClusterStatus } from '@utils/cluster';
-import { formatUsdValue } from '@utils/index';
+import { Cluster, clusterName, ClusterStatus } from '@utils/cluster';
 import { useClusterPath } from '@utils/url';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect } from 'react';
@@ -25,8 +24,9 @@ import { AUTO_REFRESH_INTERVAL, AutoRefresh, type AutoRefreshProps } from '@/app
 
 import { generateReceiptCsv } from './lib/generate-receipt-csv';
 import { generateReceiptPdf, loadPdfDeps } from './lib/generate-receipt-pdf';
+import { formatUsdValue, USD_FALLBACK } from './lib/parse-usd';
 import { usePrimaryDomain } from './lib/use-primary-domain';
-import { extractReceiptData } from './model/create-receipt';
+import { extractReceiptData, type ReceiptUnavailabilityReason } from './model/create-receipt';
 import { PriceStatus, useTokenPrice } from './model/use-price';
 import type { FormattedReceipt } from './types';
 import { NoReceipt } from './ui/BaseReceipt';
@@ -45,7 +45,7 @@ export function Receipt({ signature, autoRefresh }: ReceiptProps & AutoRefreshPr
     const transactionPath = useClusterPath({ pathname: `/tx/${signature}` });
 
     const tx = details?.data?.transactionWithMeta;
-    const { data: receipt, isLoading: isReceiptLoading } = useSWR(
+    const { data: receiptResult, isLoading: isReceiptLoading } = useSWR(
         tx ? ['receipt', signature, cluster] : null,
         () => {
             if (!tx) return undefined;
@@ -53,6 +53,7 @@ export function Receipt({ signature, autoRefresh }: ReceiptProps & AutoRefreshPr
         },
         { revalidateOnFocus: false },
     );
+    const receipt = receiptResult?.kind === 'ok' ? receiptResult.receipt : undefined;
 
     useEffect(() => {
         if (!status && clusterStatus === ClusterStatus.Connected) {
@@ -111,17 +112,30 @@ export function Receipt({ signature, autoRefresh }: ReceiptProps & AutoRefreshPr
             />
         );
     if (isDetailsLoading || isReceiptLoading) return <LoadingCard message="Loading receipt" />;
-    if (!receipt)
+    if (!receipt) {
+        const reason = receiptResult?.kind === 'unavailable' ? receiptResult.reason : undefined;
         return (
             <NoReceipt
                 transactionPath={transactionPath}
                 timestamp={tx?.blockTime}
                 onViewTxClick={handleViewTxClick}
                 onRedirect={handleRedirect}
+                message={messageForReason(reason)}
             />
         );
+    }
 
     return <ReceiptContent receipt={receipt} signature={signature} status={status} transactionPath={transactionPath} />;
+}
+
+function messageForReason(reason: ReceiptUnavailabilityReason | undefined): string | undefined {
+    switch (reason) {
+        case 'mixed-mint':
+            return 'Receipts are only available when all token transfers in a transaction use the same mint. This transaction transfers multiple different tokens.';
+        case 'no-transfers':
+        case undefined:
+            return undefined;
+    }
 }
 
 interface ReceiptContentProps {
@@ -138,6 +152,12 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
         receiptAnalytics.trackViewed(signature, receiptType);
     }, [signature, receiptType]);
 
+    const { cluster, customUrl } = useCluster();
+    const makeAddressHref = useCallback(
+        (address: string) => buildExplorerLink(cluster, customUrl, `/address/${address}`),
+        [cluster, customUrl],
+    );
+
     const senderDomain = usePrimaryDomain(receipt.sender.address);
     const receiverDomain = usePrimaryDomain(receipt.receiver.address);
     const senderLink = useExplorerLink(`/address/${receipt.sender.address}`);
@@ -149,24 +169,41 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
     const priceResult = useTokenPrice(receiptMint ?? NATIVE_MINT.toBase58());
     const isPriceLoading = priceResult?.status === PriceStatus.Loading;
     const amount = getReceiptAmount(receipt);
-    const usdValue = priceResult?.price != null ? formatUsdValue(amount, priceResult.price) : undefined;
+    const usdValue = priceResult?.price != null ? formatUsdValue(amount, priceResult.price, USD_FALLBACK) : undefined;
 
     const downloadCsv = useCallback(async () => {
-        await generateReceiptCsv(receipt, signature, usdValue);
+        try {
+            await generateReceiptCsv(receipt, signature, usdValue);
+        } catch (error) {
+            Logger.error(new Error('CSV generation failed', { cause: error }), {
+                sentry: true,
+                sentryExtras: { format: 'csv' },
+            });
+            throw error;
+        }
     }, [receipt, signature, usdValue]);
 
     const downloadPdf = useCallback(async () => {
-        const deps = await loadPdfDeps();
-        const transactionUrl = window.location.origin + transactionPath;
-        await generateReceiptPdf(
-            { ...deps, onError: Logger.error },
-            receipt,
-            signature,
-            window.location.href,
-            transactionUrl,
-            usdValue,
-        );
-    }, [receipt, signature, transactionPath, usdValue]);
+        try {
+            const deps = await loadPdfDeps(error => Logger.error(error, { sentry: true }));
+            const transactionUrl = window.location.origin + transactionPath;
+            await generateReceiptPdf(deps, receipt, {
+                clusterLabel: clusterName(cluster),
+                receiptUrl: window.location.href,
+                signature,
+                transactionUrl,
+                usdUnavailableNote:
+                    cluster === Cluster.MainnetBeta ? undefined : 'USD conversion is only available on Mainnet Beta',
+                usdValue,
+            });
+        } catch (error) {
+            Logger.error(new Error('PDF generation failed', { cause: error }), {
+                sentry: true,
+                sentryExtras: { format: 'pdf' },
+            });
+            throw error;
+        }
+    }, [receipt, signature, transactionPath, usdValue, cluster]);
 
     return (
         <SignatureContext.Provider value={signature}>
@@ -180,6 +217,13 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
                     sender: { ...receipt.sender, domain: senderDomain },
                     senderHref: senderLink.link,
                     tokenHref: tokenLink.link,
+                    transfers: receipt.transfers?.map(t => ({
+                        amount: t.amount,
+                        receiver: t.receiver,
+                        receiverHref: makeAddressHref(t.receiver.address),
+                        sender: t.sender,
+                        senderHref: makeAddressHref(t.sender.address),
+                    })),
                 }}
                 downloadCsv={downloadCsv}
                 downloadPdf={downloadPdf}

@@ -4,6 +4,7 @@ import { is } from 'superstruct';
 
 import { Logger } from '@/app/shared/lib/logger';
 
+import { SearchGroup } from '../lib/filter-tabs';
 import type { SearchContext, SearchOptions, SearchProvider } from '../lib/types';
 
 const SEARCH_TIMEOUT_MS = 5_000;
@@ -41,30 +42,36 @@ export const domainSearchProvider: SearchProvider = {
 
             if (!is(domainInfo, ResolvedDomainInfoSchema) || !domainInfo) return [];
 
+            const canonical = query.toLowerCase();
             return [
                 {
-                    label: 'Domain Owner',
+                    label: SearchGroup.DomainOwners,
                     options: [
                         {
-                            label: domainInfo.owner,
+                            label: canonical,
                             pathname: `/address/${domainInfo.owner}`,
-                            value: [query],
+                            sublabel: domainInfo.owner,
+                            type: 'address',
+                            value: [canonical, domainInfo.owner],
                         },
                     ],
                 },
-                {
-                    label: 'Name Service Account',
-                    options: [
-                        {
-                            label: query,
-                            pathname: `/address/${domainInfo.address}`,
-                            value: [query],
-                        },
-                    ],
-                },
+                // Temporarily hidden — restore to surface the SNS name account itself.
+                // {
+                //     label: SearchGroup.NameServiceAccounts,
+                //     options: [
+                //         {
+                //             label: query,
+                //             pathname: `/address/${domainInfo.address}`,
+                //             sublabel: domainInfo.address,
+                //             type: 'address',
+                //             value: [query],
+                //         },
+                //     ],
+                // },
             ];
         } catch (error) {
-            Logger.error(new Error('Domain search request failed', { cause: error }), { query });
+            Logger.error(new Error('Domain search request failed', { cause: error }), { query, sentry: true });
             return [];
         } finally {
             clearTimeout(timeoutId);

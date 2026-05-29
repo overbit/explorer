@@ -1,46 +1,83 @@
-import { type ParsedInstruction, type ParsedTransactionWithMeta, PartiallyDecodedInstruction } from '@solana/web3.js';
+import {
+    collectTransferInstructions,
+    isRentFundingProgram,
+    isSolTransferInstruction,
+    type LocatedInstruction,
+    type SolTransferInstruction,
+} from '@entities/transfer-instruction';
+import type { ParsedInstruction, ParsedTransactionWithMeta, PartiallyDecodedInstruction } from '@solana/web3.js';
 import { validate } from 'superstruct';
 
 import { Logger } from '@/app/shared/lib/logger';
 
 import { isJitoTransfer } from './jito';
 import { extractMemoFromTransaction } from './memo';
-import { SolTransferPayload, SystemTransferInstructionRefinedSchema } from './schemas';
-import { isParsedInstruction, type ReceiptSol, type SolTransferParsed } from './types';
-
-type SolTransferInstruction = ParsedInstruction & { parsed: SolTransferParsed };
+import { SolTransferPayload } from './schemas';
+import { type ReceiptSol, type Transfer } from './types';
 
 export function createSolTransferReceipt(transaction: ParsedTransactionWithMeta): ReceiptSol | undefined {
-    const instruction = getSingleSolTransferInstruction(transaction);
-    if (!instruction) return undefined;
+    const located = getSolTransferInstructions(transaction);
+    if (located.length === 0) return undefined;
 
-    const raw = extractSolTransferPayload(transaction, instruction);
+    const primary = located[0];
+    const raw = extractSolTransferPayload(transaction, primary.instruction);
 
     const [err, validated] = validate(raw, SolTransferPayload, { coerce: true });
     if (err) {
-        Logger.error(err);
+        Logger.error(err, { innerIndex: primary.innerIndex, topLevelIndex: primary.topLevelIndex });
         return undefined;
     }
+
+    let transfers: Transfer[] | undefined;
+    if (located.length > 1) {
+        const validatedTransfers = buildTransfers(transaction, located);
+        if (!validatedTransfers) return undefined;
+        transfers = validatedTransfers;
+    }
+
+    const total = transfers ? transfers.reduce((sum, t) => sum + t.total, 0) : validated.total;
 
     return {
         ...validated,
         memo: raw.memo,
+        total,
+        transfers,
         type: 'sol',
     };
 }
 
-// We support only single sol transfer instruction per transaction by design.
-function getSingleSolTransferInstruction(transaction: ParsedTransactionWithMeta): SolTransferInstruction | undefined {
-    const instructions = transaction.transaction.message.instructions
-        .filter((instruction): instruction is SolTransferInstruction => isSolTransfer(instruction))
-        .filter(instruction => !isJitoTransfer(instruction));
-    return instructions.length === 1 ? instructions[0] : undefined;
+function getSolTransferInstructions(
+    transaction: ParsedTransactionWithMeta,
+): LocatedInstruction<SolTransferInstruction>[] {
+    const collected = collectTransferInstructions(
+        transaction,
+        (instr: ParsedInstruction | PartiallyDecodedInstruction): instr is SolTransferInstruction =>
+            isSolTransferInstruction(instr) && !isJitoTransfer(instr),
+    );
+    // Drop inner System.transfers whose parent top-level instruction is a known rent-funding
+    // program (e.g. ATA Create): those are bookkeeping CPIs, not user-intended payments.
+    const topLevel = transaction.transaction.message.instructions;
+    return collected.filter(({ innerIndex, topLevelIndex }) => {
+        if (innerIndex === undefined) return true;
+        return !isRentFundingProgram(topLevel[topLevelIndex].programId);
+    });
 }
 
-function isSolTransfer(instruction: ParsedInstruction | PartiallyDecodedInstruction): boolean {
-    if (!isParsedInstruction(instruction)) return false;
-    const [err] = validate(instruction, SystemTransferInstructionRefinedSchema, { coerce: true });
-    return err === undefined;
+function buildTransfers(
+    transaction: ParsedTransactionWithMeta,
+    located: LocatedInstruction<SolTransferInstruction>[],
+): Transfer[] | undefined {
+    const result: Transfer[] = [];
+    for (const { instruction, innerIndex, topLevelIndex } of located) {
+        const payload = extractSolTransferPayload(transaction, instruction);
+        const [err, v] = validate(payload, SolTransferPayload, { coerce: true });
+        if (err) {
+            Logger.error(err, { innerIndex, topLevelIndex });
+            return undefined;
+        }
+        result.push({ receiver: v.receiver, sender: v.sender, total: v.total });
+    }
+    return result;
 }
 
 function extractSolTransferPayload(transaction: ParsedTransactionWithMeta, instruction: SolTransferInstruction) {

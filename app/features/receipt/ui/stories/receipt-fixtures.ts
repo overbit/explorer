@@ -10,6 +10,7 @@ const CLUSTER = Cluster.MainnetBeta;
 
 const senderKeypair = Keypair.generate();
 const receiverKeypair = Keypair.generate();
+const extraKeypairs = Array.from({ length: 9 }, () => Keypair.generate());
 
 const raw = {
     date: 1737100062,
@@ -27,7 +28,7 @@ const baseSolReceipt: Receipt = {
 };
 
 export const longMemoText =
-    'This is a very long description that demonstrates how the receipt component handles extended text content. It includes multiple sentences and various details about the transaction, such as the purpose of the payment, the services rendered, and any additional context that might be relevant to understanding the nature of this particular blockchain transaction on the Solana network.';
+    'This is a longer description that demonstrates how the receipt component handles extended text content, including a couple of sentences about the purpose of the payment and any additional context relevant to the transaction.';
 
 export const defaultReceipt: FormattedReceipt = formatReceiptData(baseSolReceipt, CLUSTER);
 
@@ -92,6 +93,94 @@ export const receiptTokenTransferSimple: FormattedReceipt = formatReceiptData(
     },
     CLUSTER,
 );
+
+export const receiptMultiTransfer3: FormattedReceipt = formatReceiptData(
+    {
+        ...baseSolReceipt,
+        total: 350000000,
+        transfers: [
+            { receiver: extraKeypairs[0].publicKey.toBase58(), sender: raw.sender, total: 100000000 },
+            { receiver: extraKeypairs[1].publicKey.toBase58(), sender: raw.sender, total: 50000000 },
+            { receiver: extraKeypairs[2].publicKey.toBase58(), sender: raw.sender, total: 200000000 },
+        ],
+    },
+    CLUSTER,
+);
+
+export const receiptMultiTransfer9: FormattedReceipt = formatReceiptData(
+    {
+        ...baseSolReceipt,
+        total: 1125000000,
+        transfers: Array.from({ length: 9 }, (_, i) => ({
+            receiver: extraKeypairs[i].publicKey.toBase58(),
+            sender: raw.sender,
+            total: (i + 1) * 25000000,
+        })),
+    },
+    CLUSTER,
+);
+
+export const receiptMultiTokenTransfer: FormattedReceipt = formatReceiptData(
+    {
+        date: raw.date,
+        fee: 10001,
+        logoURI: USDC_LOGO,
+        mint: USDC_MINT,
+        receiver: raw.receiver,
+        sender: raw.sender,
+        symbol: 'USDC',
+        total: 1.000841,
+        transfers: [
+            { receiver: extraKeypairs[0].publicKey.toBase58(), sender: raw.sender, total: 1 },
+            { receiver: extraKeypairs[1].publicKey.toBase58(), sender: raw.sender, total: 0.000841 },
+        ],
+        type: 'token',
+    },
+    CLUSTER,
+);
+
+export const receiptMultiTokenTransferWithMemo: FormattedReceipt = formatReceiptData(
+    {
+        date: raw.date,
+        fee: 10001,
+        logoURI: USDC_LOGO,
+        memo: 'Payroll batch — Q2',
+        mint: USDC_MINT,
+        receiver: raw.receiver,
+        sender: raw.sender,
+        symbol: 'USDC',
+        total: 1.000841,
+        transfers: [
+            { receiver: extraKeypairs[0].publicKey.toBase58(), sender: raw.sender, total: 1 },
+            { receiver: extraKeypairs[1].publicKey.toBase58(), sender: raw.sender, total: 0.000841 },
+        ],
+        type: 'token',
+    },
+    CLUSTER,
+);
+
+export const receiptMultiTokenTransferWithLongMemo: FormattedReceipt = formatReceiptData(
+    {
+        date: raw.date,
+        fee: 10001,
+        logoURI: USDC_LOGO,
+        memo: longMemoText,
+        mint: USDC_MINT,
+        receiver: raw.receiver,
+        sender: raw.sender,
+        symbol: 'USDC',
+        total: 1.000841,
+        transfers: [
+            { receiver: extraKeypairs[0].publicKey.toBase58(), sender: raw.sender, total: 1 },
+            { receiver: extraKeypairs[1].publicKey.toBase58(), sender: raw.sender, total: 0.000841 },
+        ],
+        type: 'token',
+    },
+    CLUSTER,
+);
+
+export const mixedMintNoReceiptMessage =
+    'Receipts are only available when all token transfers in a transaction use the same mint. This transaction transfers multiple different tokens.';
 
 export function forBaseReceipt(
     data: FormattedReceipt,

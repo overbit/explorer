@@ -13,6 +13,7 @@ env:
   PW_CACHE_FOLDER: ~/.cache/ms-playwright
   SENTRY_TELEMETRY_DISABLE: true
   STORYBOOK_DISABLE_TELEMETRY: 1
+  OPENSPEC_TELEMETRY: 0
 
 jobs:
   # Job to read Node version from .nvmrc
@@ -84,6 +85,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: OpenSpec
+        run: pnpm openspec:validate
+
       - name: Build
         run: pnpm build
 
@@ -127,7 +131,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Generate sitemap
-        run: pnpx tsx scripts/update-sitemap.ts
+        run: pnpm exec tsx scripts/update-sitemap.ts
 
       - name: Check for sitemap drift
         run: git diff --exit-code public/sitemap.xml public/default-sitemap.xml public/accounts-sitemap.xml

@@ -62,7 +62,7 @@ export function ReceiptView({
     }
 
     return (
-        <div className="container e-flex e-min-h-[90vh] e-min-w-[theme(screens.xs)] e-flex-col e-items-center e-justify-center e-gap-6 e-px-5 e-py-10">
+        <div className="container e-flex e-min-h-[80vh] e-min-w-[theme(screens.xs)] e-flex-col e-items-center e-justify-center e-gap-6 e-px-5 e-py-10">
             <BlurredCircle />
             <BaseReceipt data={data} />
             <div className="e-flex e-flex-row e-items-center e-gap-1">
@@ -108,6 +108,7 @@ export function ReceiptView({
                             label="CSV"
                             download={downloadCsv}
                             signature={signature}
+                            onError={() => toast.custom({ title: 'Failed to download receipt CSV', type: 'error' })}
                         />
                         <DownloadReceiptItem
                             icon={<FileText size={12} />}
@@ -115,6 +116,7 @@ export function ReceiptView({
                             label="PDF"
                             download={downloadPdf}
                             signature={signature}
+                            onError={() => toast.custom({ title: 'Failed to download receipt PDF', type: 'error' })}
                         />
                     </PopoverButton>
                 </div>

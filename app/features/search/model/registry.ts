@@ -14,10 +14,15 @@ import { specialSearchProvider } from './special-search-provider';
 import { sysvarSearchProvider } from './sysvar-search-provider';
 import { tokenSearchProvider } from './token-search-provider';
 import { transactionSearchProvider } from './transaction-search-provider';
+import { verifiedProgramsSearchProvider } from './verified-programs-search-provider';
 
 const allProviders: SearchProvider[] = [
+    ...(process.env.NEXT_PUBLIC_DISABLE_TOKEN_SEARCH || process.env.NEXT_PUBLIC_SEARCH_DISABLE_TOKENS
+        ? []
+        : [tokenSearchProvider]),
     explorerUrlSearchProvider,
     programSearchProvider,
+    verifiedProgramsSearchProvider,
     loaderSearchProvider,
     sysvarSearchProvider,
     specialSearchProvider,
@@ -27,7 +32,6 @@ const allProviders: SearchProvider[] = [
     accountSearchProvider,
     transactionSearchProvider,
     base64TxSearchProvider,
-    tokenSearchProvider,
     domainSearchProvider,
 ];
 

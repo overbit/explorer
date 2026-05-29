@@ -1,7 +1,11 @@
-import type { ParsedInstruction, ParsedTransactionWithMeta, PartiallyDecodedInstruction } from '@solana/web3.js';
-import { PublicKey } from '@solana/web3.js';
-import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
-import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022';
+import {
+    collectTransferInstructions,
+    isTokenTransferInstruction,
+    type LocatedInstruction,
+    type TokenTransferInstruction,
+    type TokenTransferParsed,
+} from '@entities/transfer-instruction';
+import type { ParsedTransactionWithMeta } from '@solana/web3.js';
 import { validate } from 'superstruct';
 
 import { Logger } from '@/app/shared/lib/logger';
@@ -9,48 +13,7 @@ import { Logger } from '@/app/shared/lib/logger';
 import type { TokenInfo } from '../api/get-token-info';
 import { extractMemoFromTransaction } from './memo';
 import { TokenTransferPayload } from './schemas';
-import { isParsedInstruction, type ReceiptToken } from './types';
-
-type TokenTransferParsed =
-    | {
-          type: 'transferChecked';
-          info: {
-              source?: string;
-              destination?: string;
-              authority?: string;
-              mint?: string;
-              tokenAmount?: {
-                  uiAmountString?: string | null;
-                  amount?: string;
-                  decimals?: number;
-              };
-          };
-      }
-    | {
-          type: 'transfer2';
-          info: {
-              source?: string;
-              destination?: string;
-              authority?: string;
-              mint?: string;
-              tokenAmount?: {
-                  uiAmountString?: string | null;
-                  amount?: string;
-                  decimals?: number;
-              };
-          };
-      }
-    | {
-          type: 'transfer';
-          info: {
-              amount?: string;
-              source?: string;
-              destination?: string;
-              authority?: string;
-          };
-      };
-
-type TokenTransferInstruction = ParsedInstruction & { parsed: TokenTransferParsed };
+import { type ReceiptToken, type Transfer } from './types';
 
 type MultisigTransferInfo = {
     multisigAuthority: string;
@@ -60,47 +23,131 @@ function isMultisigTransfer(info: Record<string, unknown>): info is MultisigTran
     return 'multisigAuthority' in info && typeof info.multisigAuthority === 'string';
 }
 
+export type TokenReceiptOutcome =
+    | { kind: 'ok'; receipt: ReceiptToken }
+    | { kind: 'rejected'; reason: 'mixed-mint' }
+    | { kind: 'not-applicable' };
+
 export async function createTokenTransferReceipt(
     transaction: ParsedTransactionWithMeta,
     getTokenInfo: (mint: string | undefined) => Promise<TokenInfo | undefined>,
-): Promise<ReceiptToken | undefined> {
-    const instruction = getSingleTokenTransferInstruction(transaction);
-    if (!instruction) return undefined;
+): Promise<TokenReceiptOutcome> {
+    const located = getTokenTransferInstructions(transaction);
+    if (located.length === 0) return { kind: 'not-applicable' };
 
-    const raw = extractTokenTransferPayload(transaction, instruction);
+    const primary = located[0];
+    const raw = extractTokenTransferPayload(transaction, primary.instruction);
 
     const [err, validated] = validate(raw, TokenTransferPayload, { coerce: true });
     if (err) {
-        Logger.error(err);
-        return undefined;
+        Logger.error(err, { innerIndex: primary.innerIndex, topLevelIndex: primary.topLevelIndex });
+        return { kind: 'not-applicable' };
+    }
+
+    let transfers: Transfer[] | undefined;
+    let total = validated.total;
+
+    if (located.length > 1) {
+        const primaryAmount = extractAmountInfo(primary.instruction.parsed, transaction);
+        if (!primaryAmount) return { kind: 'not-applicable' };
+
+        const built = buildTokenTransfers(transaction, located, {
+            amount: primaryAmount,
+            transfer: { receiver: validated.receiver, sender: validated.sender, total: validated.total },
+            validated,
+        });
+        if (built.kind !== 'ok') return built;
+        transfers = built.transfers;
+        total = built.total;
     }
 
     const tokenInfo = await getTokenInfo(validated.mint);
     return {
-        ...validated,
-        logoURI: tokenInfo?.logoURI,
-        memo: raw.memo,
-        symbol: tokenInfo?.symbol,
-        type: 'token',
+        kind: 'ok',
+        receipt: {
+            ...validated,
+            logoURI: tokenInfo?.logoURI,
+            memo: raw.memo,
+            symbol: tokenInfo?.symbol,
+            total,
+            transfers,
+            type: 'token',
+        },
     };
 }
 
-// We support only single token transfer instruction per transaction by design.
-function getSingleTokenTransferInstruction(
+function getTokenTransferInstructions(
     transaction: ParsedTransactionWithMeta,
-): TokenTransferInstruction | undefined {
-    const instructions = transaction.transaction.message.instructions.filter(
-        (instruction): instruction is TokenTransferInstruction => isTokenTransfer(instruction),
-    );
-    return instructions.length === 1 ? instructions[0] : undefined;
+): LocatedInstruction<TokenTransferInstruction>[] {
+    return collectTransferInstructions(transaction, isTokenTransferInstruction);
 }
 
-function isTokenTransfer(instruction: ParsedInstruction | PartiallyDecodedInstruction): boolean {
-    return (
-        isTokenProgram(instruction.programId) &&
-        isParsedInstruction(instruction) &&
-        ['transfer', 'transferChecked', 'transfer2'].includes(instruction.parsed.type)
-    );
+type BuildTokenTransfersResult =
+    | { kind: 'ok'; transfers: Transfer[] | undefined; total: number }
+    | { kind: 'rejected'; reason: 'mixed-mint' }
+    | { kind: 'not-applicable' };
+
+type AmountInfo = { rawAmount: string; decimals: number };
+
+type PrimaryToken = {
+    amount: AmountInfo;
+    transfer: Transfer;
+    validated: { mint: string };
+};
+
+// Sums token amounts via BigInt over base units to avoid float drift (e.g. 0.1 + 0.2),
+// then divides by 10^decimals once. Caller guarantees all instructions share a mint
+// (and therefore the same decimals).
+function buildTokenTransfers(
+    transaction: ParsedTransactionWithMeta,
+    located: LocatedInstruction<TokenTransferInstruction>[],
+    primary: PrimaryToken,
+): BuildTokenTransfersResult {
+    const transfers: Transfer[] = [primary.transfer];
+    let totalRaw = BigInt(primary.amount.rawAmount);
+    const decimals = primary.amount.decimals;
+
+    for (let i = 1; i < located.length; i++) {
+        const { instruction, innerIndex, topLevelIndex } = located[i];
+        const payload = extractTokenTransferPayload(transaction, instruction);
+        const [err, v] = validate(payload, TokenTransferPayload, { coerce: true });
+        if (err) {
+            Logger.error(err, { innerIndex, topLevelIndex });
+            return { kind: 'not-applicable' };
+        }
+        // Mixed-mint receipts are out of scope: a single total only makes sense for one mint.
+        if (v.mint !== primary.validated.mint) return { kind: 'rejected', reason: 'mixed-mint' };
+
+        const amount = extractAmountInfo(instruction.parsed, transaction);
+        if (!amount) return { kind: 'not-applicable' };
+
+        totalRaw += BigInt(amount.rawAmount);
+        transfers.push({ receiver: v.receiver, sender: v.sender, total: v.total });
+    }
+
+    // Number() before division is intentional: BigInt division truncates (floor), which
+    // would discard the fractional part. Converting first keeps the fractional digits intact.
+    // Transaction token amounts are well within Number.MAX_SAFE_INTEGER for any realistic token.
+    return {
+        kind: 'ok',
+        total: Number(totalRaw) / Math.pow(10, decimals),
+        transfers: transfers.length >= 2 ? transfers : undefined,
+    };
+}
+
+function extractAmountInfo(
+    parsed: TokenTransferParsed,
+    transaction: ParsedTransactionWithMeta,
+): AmountInfo | undefined {
+    if (parsed.type === 'transferChecked' || parsed.type === 'transfer2') {
+        const tokenAmount = parsed.info.tokenAmount;
+        if (!tokenAmount?.amount || tokenAmount.decimals === undefined) return undefined;
+        return { decimals: tokenAmount.decimals, rawAmount: tokenAmount.amount };
+    }
+    if (!parsed.info.amount) return undefined;
+    const decimals = getTokenDecimals(transaction, (parsed.info.destination || parsed.info.source)?.toString());
+    if (decimals === undefined) return undefined;
+    return { decimals, rawAmount: parsed.info.amount };
 }
 
 function extractTokenTransferPayload(transaction: ParsedTransactionWithMeta, instruction: TokenTransferInstruction) {
@@ -186,11 +233,4 @@ function getTokenDecimals(
     const tokenBalance = transaction.meta?.postTokenBalances?.find(balance => balance.accountIndex === accountIndex);
 
     return tokenBalance?.uiTokenAmount.decimals;
-}
-
-function isTokenProgram(programId: PublicKey): boolean {
-    return (
-        programId.equals(new PublicKey(TOKEN_PROGRAM_ADDRESS)) ||
-        programId.equals(new PublicKey(TOKEN_2022_PROGRAM_ADDRESS))
-    );
 }
