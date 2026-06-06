@@ -1370,7 +1370,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1054,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 981,
     "description": ""
   },
   {
@@ -1414,7 +1414,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1052,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 979,
     "description": ""
   },
   {
@@ -1610,7 +1610,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1055,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 982,
     "description": ""
   },
   {
@@ -1859,7 +1859,7 @@
     ],
     "min_jito_versions": [],
     "planned_testnet_order": null,
-    "testnet_activation_epoch": null,
+    "testnet_activation_epoch": 968,
     "devnet_activation_epoch": null,
     "comms_required": null,
     "mainnet_activation_epoch": null,
