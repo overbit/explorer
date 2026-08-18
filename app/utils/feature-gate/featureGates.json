@@ -1370,7 +1370,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1054,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 981,
     "description": ""
   },
   {
@@ -1414,7 +1414,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1052,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 979,
     "description": ""
   },
   {
@@ -1436,7 +1436,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1056,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 984,
     "description": ""
   },
   {
@@ -1458,7 +1458,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1058,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 985,
     "description": ""
   },
   {
@@ -1480,7 +1480,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1066,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 991,
     "description": ""
   },
   {
@@ -1546,7 +1546,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1059,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 986,
     "description": ""
   },
   {
@@ -1610,7 +1610,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1055,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 982,
     "description": ""
   },
   {
@@ -1674,7 +1674,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1067,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 992,
     "description": ""
   },
   {
@@ -1696,7 +1696,7 @@
     "testnet_activation_epoch": 955,
     "devnet_activation_epoch": 1065,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 989,
     "description": ""
   },
   {
@@ -1720,7 +1720,7 @@
     "testnet_activation_epoch": 956,
     "devnet_activation_epoch": 1070,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 995,
     "description": ""
   },
   {
@@ -1816,7 +1816,7 @@
     "testnet_activation_epoch": 954,
     "devnet_activation_epoch": 1069,
     "comms_required": null,
-    "mainnet_activation_epoch": null,
+    "mainnet_activation_epoch": 993,
     "description": ""
   },
   {
@@ -1929,8 +1929,8 @@
     ],
     "min_jito_versions": [],
     "planned_testnet_order": null,
-    "testnet_activation_epoch": null,
-    "devnet_activation_epoch": null,
+    "testnet_activation_epoch": 977,
+    "devnet_activation_epoch": 1092,
     "comms_required": null,
     "mainnet_activation_epoch": null,
     "description": ""
@@ -2001,7 +2001,103 @@
     ],
     "min_jito_versions": [],
     "planned_testnet_order": null,
-    "testnet_activation_epoch": null,
+    "testnet_activation_epoch": 981,
+    "devnet_activation_epoch": 1099,
+    "comms_required": null,
+    "mainnet_activation_epoch": null,
+    "description": ""
+  },
+  {
+    "key": "iBRL5RuWhw4yqaAZu96RUULHckHTZAoe2b77qaV38JZ",
+    "title": "SIMD-0525: Reduce Slot Time to 350ms",
+    "simd_link": [
+      "https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0525-reduce-slot-times.md"
+    ],
+    "simds": [
+      "0525"
+    ],
+    "owners": [],
+    "min_agave_versions": [
+      "v4.2.0-beta.1"
+    ],
+    "min_fd_versions": [
+      "v1.1.1"
+    ],
+    "min_jito_versions": [],
+    "planned_testnet_order": null,
+    "testnet_activation_epoch": 1000,
+    "devnet_activation_epoch": 1115,
+    "comms_required": null,
+    "mainnet_activation_epoch": null,
+    "description": ""
+  },
+  {
+    "key": "iBRLL3k18HST852F1Mf3Lv83waTNQmmqvKDxvYGwQFL",
+    "title": "SIMD-0525: Reduce Slot Time to 300ms",
+    "simd_link": [
+      "https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0525-reduce-slot-times.md"
+    ],
+    "simds": [
+      "0525"
+    ],
+    "owners": [],
+    "min_agave_versions": [
+      "v4.2.0-beta.1"
+    ],
+    "min_fd_versions": [
+      "v1.1.1"
+    ],
+    "min_jito_versions": [],
+    "planned_testnet_order": null,
+    "testnet_activation_epoch": 1002,
+    "devnet_activation_epoch": 1118,
+    "comms_required": null,
+    "mainnet_activation_epoch": null,
+    "description": ""
+  },
+  {
+    "key": "iBRLMc81UjRa8fn8A6eE8bJTnRbgQoPTynM51akENCV",
+    "title": "SIMD-0525: Reduce Slot Time to 250ms",
+    "simd_link": [
+      "https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0525-reduce-slot-times.md"
+    ],
+    "simds": [
+      "0525"
+    ],
+    "owners": [],
+    "min_agave_versions": [
+      "v4.2.0-beta.1"
+    ],
+    "min_fd_versions": [
+      "v1.1.1"
+    ],
+    "min_jito_versions": [],
+    "planned_testnet_order": null,
+    "testnet_activation_epoch": 1004,
+    "devnet_activation_epoch": null,
+    "comms_required": null,
+    "mainnet_activation_epoch": null,
+    "description": ""
+  },
+  {
+    "key": "iBRLjhJnkmDZgNoZRDMW11d8ZV7HvsL3vAyRjZB5npW",
+    "title": "SIMD-0525: Reduce Slot Time to 200ms",
+    "simd_link": [
+      "https://github.com/solana-foundation/solana-improvement-documents/blob/main/proposals/0525-reduce-slot-times.md"
+    ],
+    "simds": [
+      "0525"
+    ],
+    "owners": [],
+    "min_agave_versions": [
+      "v4.2.0-beta.1"
+    ],
+    "min_fd_versions": [
+      "v1.1.1"
+    ],
+    "min_jito_versions": [],
+    "planned_testnet_order": null,
+    "testnet_activation_epoch": 1006,
     "devnet_activation_epoch": null,
     "comms_required": null,
     "mainnet_activation_epoch": null,
