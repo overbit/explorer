@@ -1,211 +1,108 @@
 'use client';
 
-import { getTransactionRows, HistoryCardFooter, HistoryCardHeader } from '@components/account/HistoryCardComponents';
-import { Copyable } from '@components/common/Copyable';
+import {
+    HistoryFilterChips,
+    HistoryFilterTrigger,
+    useClearHistoryFilters,
+    useHistoryFilters,
+} from '@components/account/history/HistoryFilterBar';
+import { getTransactionRows } from '@components/account/HistoryCardComponents';
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
-import { Signature } from '@components/common/Signature';
-import { Slot } from '@components/common/Slot';
-import { useAccountHistory, useFetchAccountHistory } from '@providers/accounts/history';
 import { FetchStatus } from '@providers/cache';
-import { PublicKey } from '@solana/web3.js';
-import { displayTimestampUtc } from '@utils/date';
-import React, { useCallback, useMemo } from 'react';
+import { address as toAddress } from '@solana/kit';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
-import { useFetchRawTransaction, useRawTransactionDetails } from '@/app/providers/transactions/raw';
-import { DownloadDropdown } from '@/app/shared/components/DownloadDropdown';
-import { toBase64 } from '@/app/shared/lib/bytes';
-import { RelativeTime } from '@/app/shared/RelativeTime';
-
-import { useInstructionNames } from '../lib/use-instruction-names';
-import { InstructionList, InstructionListSkeleton } from './InstructionList';
+import { isGtfaDisabled } from '../lib/gtfa-disabled-addresses';
+import { useAccountHistory, useHistoryFiltersSupported, useResetAccountHistory } from '../model/use-account-history';
+import { useFetchAccountHistory } from '../model/use-fetch-account-history';
+import { BaseTransactionHistoryCard, type TransactionHistoryRowView } from './BaseTransactionHistoryCard';
+import { InstructionsCell } from './InstructionsCell';
+import { MemoCell } from './MemoCell';
+import { TransactionRawDataCell } from './TransactionRawDataCell';
 
 export function TransactionHistoryCard({ address }: { address: string }) {
-    const pubkey = useMemo(() => new PublicKey(address), [address]);
+    const historyAddress = useMemo(() => toAddress(address), [address]);
+    const filters = useHistoryFilters();
+    const hasActiveFilters = Object.values(filters).some(value => value !== undefined);
+    const filtersKey = JSON.stringify(filters);
     const history = useAccountHistory(address);
-    const fetchAccountHistory = useFetchAccountHistory();
-    const refresh = () => fetchAccountHistory(pubkey, false, true);
-    const loadMore = () => fetchAccountHistory(pubkey, false);
+    const fetchAccountHistory = useFetchAccountHistory(25, filters);
+    const resetHistory = useResetAccountHistory();
+    // Filtering needs gTFA. It's unavailable when the endpoint doesn't implement gTFA at all
+    // (endpoint-wide flag) or when gTFA is temporarily disabled for this specific address (which
+    // falls back to getSignaturesForAddress and can't honour filters). Both must drop active
+    // filters, otherwise the URL params survive and misleading chips render beside unfiltered rows.
+    const filtersSupported = useHistoryFiltersSupported() && !isGtfaDisabled(address);
+    const clearFilters = useClearHistoryFilters();
 
-    const transactionRows = React.useMemo(() => {
-        if (history?.data?.fetched) {
-            return getTransactionRows(history.data.fetched);
-        }
-        return [];
-    }, [history]);
+    // Signatures only — the parsed transactions for instruction names are fetched lazily per row, one at a
+    // time (see InstructionsCell), so the page never batch-hammers the RPC into 429s.
+    const refresh = useCallback(
+        () => fetchAccountHistory(historyAddress, false, true),
+        [fetchAccountHistory, historyAddress],
+    );
+    const loadMore = useCallback(
+        () => fetchAccountHistory(historyAddress, false),
+        [fetchAccountHistory, historyAddress],
+    );
 
-    React.useEffect(() => {
+    const rows: TransactionHistoryRowView[] = history?.data?.fetched
+        ? getTransactionRows(history.data.fetched).map(row => ({
+              blockTime: row.blockTime,
+              instructionsCell: <InstructionsCell signature={row.signature} />,
+              memoCell: row.signatureInfo.memo ? <MemoCell memo={row.signatureInfo.memo} /> : '---',
+              rawDataCell: <TransactionRawDataCell signature={row.signature} />,
+              signature: row.signature,
+              slot: row.slot,
+              status: row.err ? 'failed' : 'success',
+          }))
+        : [];
+
+    useEffect(() => {
         if (!history) {
             refresh();
         }
     }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (!history) {
-        return null;
+    // Refetch from scratch when any filter changes. The cache is keyed by address
+    // only, so we reset this address's entry (which also supersedes any in-flight
+    // request for it) before refetching to avoid mixing pre- and post-filter results
+    // in combineFetched.
+    const previousFiltersKey = useRef(filtersKey);
+    useEffect(() => {
+        if (previousFiltersKey.current !== filtersKey) {
+            previousFiltersKey.current = filtersKey;
+            resetHistory(address);
+            refresh();
+        }
+    }, [filtersKey, address, resetHistory, refresh]);
+
+    // If the endpoint turns out not to support filtering, drop any active filters so the
+    // (unfiltered) results aren't shown alongside misleading filter chips.
+    useEffect(() => {
+        if (!filtersSupported && hasActiveFilters) {
+            clearFilters();
+        }
+    }, [filtersSupported, hasActiveFilters, clearFilters]);
+
+    if (!history?.data) {
+        return !history || history.status === FetchStatus.Fetching ? (
+            <LoadingCard message="Loading history" />
+        ) : (
+            <ErrorCard retry={refresh} text="Failed to fetch transaction history" />
+        );
     }
 
-    if (history?.data === undefined) {
-        if (history.status === FetchStatus.Fetching) {
-            return <LoadingCard message="Loading history" />;
-        }
-
-        return <ErrorCard retry={refresh} text="Failed to fetch transaction history" />;
-    }
-
-    const hasTimestamps = transactionRows.some(element => element.blockTime);
-    const detailsList: React.ReactNode[] = transactionRows.map(
-        ({ slot, signature, blockTime, statusClass, statusText, signatureInfo }) => (
-            <TransactionRow
-                key={signature}
-                signature={signature}
-                slot={slot}
-                blockTime={blockTime}
-                statusClass={statusClass}
-                statusText={statusText}
-                memo={signatureInfo.memo}
-                hasTimestamps={hasTimestamps}
-            />
-        ),
-    );
-
-    const fetching = history.status === FetchStatus.Fetching;
     return (
-        <div className="card">
-            <HistoryCardHeader
-                fetching={fetching}
-                refresh={() => refresh()}
-                title="Transaction History"
-                analyticsSection="transaction_history_header"
-            />
-            <div className="table-responsive mb-0">
-                <table className="table table-sm table-nowrap card-table">
-                    <thead>
-                        <tr>
-                            <th className="text-muted w-1">Transaction Signature</th>
-                            <th className="text-muted w-1">Block</th>
-                            {hasTimestamps && (
-                                <>
-                                    <th className="text-muted w-1">Age</th>
-                                    <th className="text-muted w-1">Timestamp</th>
-                                </>
-                            )}
-                            <th className="text-muted">Memo</th>
-                            <th className="text-muted">Result</th>
-                            <th className="text-muted">Raw Data</th>
-                        </tr>
-                    </thead>
-                    <tbody className="list">{detailsList}</tbody>
-                </table>
-            </div>
-            <HistoryCardFooter fetching={fetching} foundOldest={history.data.foundOldest} loadMore={() => loadMore()} />
-        </div>
-    );
-}
-
-type TransactionRowProps = {
-    signature: string;
-    slot: number;
-    blockTime: number | null | undefined;
-    statusClass: string;
-    statusText: string;
-    memo?: string | null;
-    hasTimestamps: boolean;
-};
-
-function TransactionRow({
-    signature,
-    slot,
-    blockTime,
-    statusClass,
-    statusText,
-    memo,
-    hasTimestamps,
-}: TransactionRowProps) {
-    const instructionNames = useInstructionNames(signature);
-
-    return (
-        <tr>
-            <td>
-                <Signature signature={signature} link truncateChars={40} />
-                {instructionNames !== null && instructionNames.length > 0 ? (
-                    <InstructionList instructions={instructionNames} />
-                ) : instructionNames === null ? (
-                    <InstructionListSkeleton />
-                ) : null}
-            </td>
-
-            <td className="w-1">
-                <Slot slot={slot} link />
-            </td>
-
-            {hasTimestamps && (
-                <>
-                    <td className="text-muted">{blockTime ? <RelativeTime date={blockTime * 1000} /> : '---'}</td>
-                    <td className="text-muted">{blockTime ? displayTimestampUtc(blockTime * 1000, true) : '---'}</td>
-                </>
-            )}
-
-            <td>{memo ? <MemoField memo={memo} /> : '---'}</td>
-
-            <td>
-                <span className={`badge bg-${statusClass}-soft`}>{statusText}</span>
-            </td>
-            <td>
-                <TransactionRawDataDownloadField signature={signature} />
-            </td>
-        </tr>
-    );
-}
-
-function TransactionRawDataDownloadField({ signature }: { signature: string }) {
-    const fetchRaw = useFetchRawTransaction();
-    const rawDetails = useRawTransactionDetails(signature);
-    const serialized = rawDetails?.data?.raw?.message.serialize();
-    const transactionData = useMemo(() => serialized && new Uint8Array(serialized), [serialized]);
-    const loading = rawDetails?.status === FetchStatus.Fetching;
-
-    const handleHover = useCallback(() => {
-        if (!transactionData) {
-            fetchRaw(signature);
-        }
-    }, [transactionData, signature, fetchRaw]);
-
-    return (
-        <div className="d-flex align-items-center gap-1" onMouseEnter={handleHover}>
-            <Copyable text={transactionData ? toBase64(transactionData) : null}>
-                <DownloadDropdown data={transactionData} loading={loading} filename={signature} />
-            </Copyable>
-        </div>
-    );
-}
-
-function MemoField({ memo }: { memo: string }) {
-    const [showTooltip, setShowTooltip] = React.useState(false);
-    const truncateLength = 25;
-    // Remove memo length like "[15] " from the memo for display (handles all occurrences)
-    // eslint-disable-next-line no-restricted-syntax -- Regex is needed to strip repeated "[<len>]" memo prefixes from RPC memo strings.
-    const cleanMemo = memo.replace(/\[\d+\]\s*/g, '').trim();
-    const isTruncated = cleanMemo.length > truncateLength;
-    const displayText = isTruncated ? `${cleanMemo.slice(0, truncateLength)}...` : cleanMemo;
-
-    return (
-        <div
-            className="popover-container"
-            onMouseOver={() => isTruncated && setShowTooltip(true)}
-            onMouseOut={() => setShowTooltip(false)}
-            style={{ cursor: isTruncated ? 'pointer' : 'default' }}
-        >
-            <Copyable text={cleanMemo}>
-                <span className="text">{displayText}</span>
-            </Copyable>
-            {showTooltip && (
-                <div className="popover bs-popover-top show" style={{ maxWidth: '20rem' }}>
-                    <div className="arrow" />
-                    <div className="popover-body" style={{ wordBreak: 'break-word' }}>
-                        {cleanMemo}
-                    </div>
-                </div>
-            )}
-        </div>
+        <BaseTransactionHistoryCard
+            rows={rows}
+            fetching={history.status === FetchStatus.Fetching}
+            foundOldest={history.data.foundOldest}
+            onRefresh={refresh}
+            onLoadMore={loadMore}
+            headerActions={<HistoryFilterTrigger address={address} {...filters} />}
+            headerSubRow={hasActiveFilters ? <HistoryFilterChips {...filters} /> : undefined}
+        />
     );
 }

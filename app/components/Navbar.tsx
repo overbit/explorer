@@ -1,16 +1,19 @@
 'use client';
 
+import { cn } from '@components/shared/utils';
+import { ClusterStatusButton } from '@features/cluster-switcher';
 import Logo from '@img/logos-solana/dark-explorer-logo.svg';
 import Gainsway from '@img/logos-solana/gainsway.svg';
 import { useDisclosure } from '@mantine/hooks';
-import { cn } from '@shared/utils';
 import { useClusterPath } from '@utils/url';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useSelectedLayoutSegment, useSelectedLayoutSegments } from 'next/navigation';
 import React, { ReactNode } from 'react';
+import { Menu } from 'react-feather';
 
-import { ClusterStatusButton } from './ClusterStatusButton';
+import { ExternalLink } from '@/app/components/shared/ui/external-link';
+import { NavbarItem, NavbarLink, NavbarList } from '@/app/shared/ui/Navbar';
 
 export interface INavbarProps {
     children?: ReactNode;
@@ -25,9 +28,12 @@ export function Navbar({ children }: INavbarProps) {
     const selectedLayoutSegments = useSelectedLayoutSegments();
 
     return (
-        <nav className="navbar navbar-expand-lg navbar-light">
-            <div className="container navbar-container">
-                <Link className="d-flex align-items-center" href={homePath}>
+        <nav className="flex flex-wrap items-center bg-dk-gray-800-dark py-3 text-dk-white">
+            <div
+                // Per-breakpoint max-widths mirror Bootstrap `.container` (sm 540 / md 720 / lg 960 / xl 1140 / xxl 1320) so logo + links land in the same gutter as before the shell migration.
+                className="mx-auto flex w-full flex-wrap items-center justify-between px-6 sm:max-w-[540px] md:max-w-[720px] lg:max-w-[960px] xl:max-w-[1140px] xxl:max-w-[1320px]"
+            >
+                <Link className="flex items-center" href={homePath}>
                     <Image
                         alt="Gainsway"
                         height={45}
@@ -63,47 +69,57 @@ export function Navbar({ children }: INavbarProps) {
                     />
                 </Link>
 
-                <button className="navbar-toggler" type="button" onClick={navHandlers.toggle}>
-                    <span className="navbar-toggler-icon"></span>
+                <button
+                    type="button"
+                    aria-label="Toggle navigation"
+                    onClick={navHandlers.toggle}
+                    className="rounded-dk border border-solid border-transparent bg-transparent px-0 py-1 text-dk-gray-700 lg:hidden"
+                >
+                    <Menu size={24} aria-hidden />
                 </button>
 
-                <div
-                    className="navbar-children d-flex align-items-center flex-grow-1 h-100 d-none d-xl-block"
-                    style={{ minWidth: 0 }}
-                >
+                <div className="flex hidden h-full grow items-center pl-6 pr-2 xl:block" style={{ minWidth: 0 }}>
                     {children}
                 </div>
 
-                <div className={cn('collapse navbar-collapse ms-auto', navOpened && 'show', 'flex-shrink-0')}>
-                    <ul className="navbar-nav me-auto">
-                        <li className="nav-item">
-                            <Link
-                                className={cn('nav-link', selectedLayoutSegment === 'feature-gates' && 'active')}
-                                href={featureGatesPath}
+                <div
+                    className={cn(
+                        // The lg: row layout is unconditional: `navOpened` only drives the below-lg drawer, and it
+                        // survives a resize past the breakpoint where the toggle that set it is no longer rendered.
+                        'ml-auto shrink-0 lg:flex lg:w-auto lg:flex-row lg:items-center',
+                        navOpened ? 'flex w-full flex-col' : 'hidden',
+                    )}
+                >
+                    <NavbarList className="mr-auto flex-col lg:flex-row">
+                        <NavbarItem>
+                            <NavbarLink asChild active={selectedLayoutSegment === 'feature-gates'}>
+                                <Link href={featureGatesPath}>Feature Gates</Link>
+                            </NavbarLink>
+                        </NavbarItem>
+                        {/* Hidden until the MCP endpoint is announced; /mcp/start stays reachable by direct link.
+                            The href is a plain path, not useClusterPath — the page documents a cluster-agnostic endpoint.
+                        <NavbarItem>
+                            <NavbarLink asChild active={selectedLayoutSegment === 'mcp'}>
+                                <Link href="/mcp/start">MCP</Link>
+                            </NavbarLink>
+                        </NavbarItem> */}
+                        <NavbarItem>
+                            <NavbarLink
+                                asChild
+                                active={
+                                    selectedLayoutSegments[0] === 'tx' && selectedLayoutSegments[1] === '(inspector)'
+                                }
                             >
-                                Feature Gates
-                            </Link>
-                        </li>
-                        <li className="nav-item">
-                            <Link
-                                className={cn(
-                                    'nav-link',
-                                    selectedLayoutSegments[0] === 'tx' &&
-                                        selectedLayoutSegments[1] === '(inspector)' &&
-                                        'active',
-                                )}
-                                href={inspectorPath}
-                            >
-                                Inspector
-                            </Link>
-                        </li>
-                        <li className="nav-item align-items-center justify-content-center pt-2">
-                            <a
+                                <Link href={inspectorPath}>Inspector</Link>
+                            </NavbarLink>
+                        </NavbarItem>
+                        {/* Centred only in the lg row; the drawer stacks vertically, where centring breaks the left edge the text links share. */}
+                        <NavbarItem className="flex items-center lg:justify-center">
+                            <ExternalLink
                                 aria-label="GitHub Repository"
                                 href="https://github.com/solana-foundation/explorer"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mx-3"
+                                // mx-2 matches the text links' px-2 so the drawer shares one left edge; lg restores the row spacing.
+                                className="mx-2 lg:mx-3"
                             >
                                 <svg width="30" height="30" viewBox="0 0 98 98" xmlns="http://www.w3.org/2000/svg">
                                     <path
@@ -113,12 +129,12 @@ export function Navbar({ children }: INavbarProps) {
                                         fill="#fff"
                                     />
                                 </svg>
-                            </a>
-                        </li>
-                    </ul>
+                            </ExternalLink>
+                        </NavbarItem>
+                    </NavbarList>
                 </div>
 
-                <div className="d-none d-lg-block flex-shrink-0 ms-1">
+                <div className="ml-[3px] hidden max-w-[210px] shrink-0 lg:block">
                     <ClusterStatusButton />
                 </div>
             </div>

@@ -3,9 +3,12 @@ import { LoadingCard } from '@components/common/LoadingCard';
 import { Account, isTokenProgramData } from '@providers/accounts';
 import React from 'react';
 
+import { ExternalLink } from '@/app/components/shared/ui/external-link';
 import { getProxiedUri } from '@/app/features/metadata/utils';
 import { useCluster } from '@/app/providers/cluster';
 import { useCompressedNft } from '@/app/providers/compressed-nft';
+import { Card, CardHeader, CardTitle } from '@/app/shared/ui/Card';
+import { BaseTable } from '@/app/shared/ui/Table';
 
 interface File {
     uri: string;
@@ -78,34 +81,32 @@ function NormalMetaplexFilesCard({ metadataUri }: { metadataUri: string }) {
 
     const filesList: React.ReactNode[] = files.map(({ uri, type }) => {
         return (
-            <tr key={`${uri}:${type}`}>
-                <td>
-                    <a href={uri} target="_blank" rel="noopener noreferrer">
-                        {uri}
-                    </a>
-                </td>
-                <td>{type}</td>
-            </tr>
+            <BaseTable.Row key={`${uri}:${type}`}>
+                <BaseTable.Cell>
+                    <ExternalLink href={uri}>{uri}</ExternalLink>
+                </BaseTable.Cell>
+                <BaseTable.Cell>{type}</BaseTable.Cell>
+            </BaseTable.Row>
         );
     });
 
     return (
-        <div className="card">
-            <div className="card-header align-items-center">
-                <h3 className="card-header-title">Files</h3>
-            </div>
-            <div className="table-responsive mb-0">
-                <table className="table table-sm table-nowrap card-table">
-                    <thead>
-                        <tr>
-                            <th className="text-muted w-1">File URI</th>
-                            <th className="text-muted w-1">File Type</th>
-                        </tr>
-                    </thead>
-                    <tbody className="list">{filesList}</tbody>
-                </table>
-            </div>
-        </div>
+        <Card ui="dashkit">
+            <CardHeader ui="dashkit">
+                <CardTitle as="h3" ui="dashkit">
+                    Files
+                </CardTitle>
+            </CardHeader>
+            <BaseTable ui="dashkit" variant="card" nowrap>
+                <BaseTable.Head>
+                    <BaseTable.Row>
+                        <BaseTable.HeaderCell className="w-px text-dk-gray-700">File URI</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="w-px text-dk-gray-700">File Type</BaseTable.HeaderCell>
+                    </BaseTable.Row>
+                </BaseTable.Head>
+                <BaseTable.Body>{filesList}</BaseTable.Body>
+            </BaseTable>
+        </Card>
     );
 }
 

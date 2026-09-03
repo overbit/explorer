@@ -4,24 +4,30 @@ import { Address } from '@components/common/Address';
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { Signature } from '@components/common/Signature';
+import { type TransactionWithMeta } from '@entities/transaction-data';
+import { useFetchAccountHistory } from '@features/transaction-history/model/use-fetch-account-history';
 import { useAccountHistory } from '@providers/accounts';
-import { useFetchAccountHistory } from '@providers/accounts/history';
 import { FetchStatus } from '@providers/cache';
-import { ParsedInstruction, ParsedTransactionWithMeta, PartiallyDecodedInstruction, PublicKey } from '@solana/web3.js';
+import { HistoryCardFooter, HistoryCardHeader } from '@shared/ui/HistoryCard';
+import { address as toAddress } from '@solana/kit';
+import { ParsedInstruction, PartiallyDecodedInstruction, PublicKey } from '@solana/web3.js';
 import { getTokenInstructionName, InstructionContainer } from '@utils/instruction';
 import React, { useMemo } from 'react';
 
+import { Badge } from '@/app/components/shared/ui/badge';
 import { RelativeTime } from '@/app/shared/RelativeTime';
+import { Card } from '@/app/shared/ui/Card';
+import { BaseTable } from '@/app/shared/ui/Table';
 
-import { getTransactionRows, HistoryCardFooter, HistoryCardHeader } from '../HistoryCardComponents';
+import { getTransactionRows } from '../HistoryCardComponents';
 import { extractMintDetails, MintDetails } from './common';
 
 export function TokenInstructionsCard({ address }: { address: string }) {
     const pubkey = useMemo(() => new PublicKey(address), [address]);
     const history = useAccountHistory(address);
     const fetchAccountHistory = useFetchAccountHistory();
-    const refresh = () => fetchAccountHistory(pubkey, true, true);
-    const loadMore = () => fetchAccountHistory(pubkey, true);
+    const refresh = () => fetchAccountHistory(toAddress(address), true, true);
+    const loadMore = () => fetchAccountHistory(toAddress(address), true);
 
     const transactionRows = React.useMemo(() => {
         if (history?.data?.fetched) {
@@ -37,7 +43,7 @@ export function TokenInstructionsCard({ address }: { address: string }) {
     }, [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const { hasTimestamps, detailsList } = React.useMemo(() => {
-        const detailedHistoryMap = history?.data?.transactionMap || new Map<string, ParsedTransactionWithMeta>();
+        const detailedHistoryMap = history?.data?.transactionMap || new Map<string, TransactionWithMeta>();
         const hasTimestamps = transactionRows.some(element => element.blockTime);
         const detailsList: React.ReactNode[] = [];
         const mintMap = new Map<string, MintDetails>();
@@ -66,25 +72,29 @@ export function TokenInstructionsCard({ address }: { address: string }) {
 
                 if (instructionName) {
                     detailsList.push(
-                        <tr key={signature + index}>
-                            <td>
-                                <Signature signature={signature} link truncateChars={48} />
-                            </td>
+                        <BaseTable.Row key={signature + index}>
+                            <BaseTable.Cell>
+                                <Signature signature={signature} link />
+                            </BaseTable.Cell>
 
                             {hasTimestamps && (
-                                <td className="text-muted">{blockTime && <RelativeTime date={blockTime * 1000} />}</td>
+                                <BaseTable.Cell className="text-dk-gray-700">
+                                    {blockTime && <RelativeTime date={blockTime * 1000} />}
+                                </BaseTable.Cell>
                             )}
 
-                            <td>{instructionName}</td>
+                            <BaseTable.Cell>{instructionName}</BaseTable.Cell>
 
-                            <td>
-                                <Address pubkey={programId} link truncate truncateChars={16} />
-                            </td>
+                            <BaseTable.Cell>
+                                <Address pubkey={programId} link />
+                            </BaseTable.Cell>
 
-                            <td>
-                                <span className={`badge bg-${statusClass}-soft`}>{statusText}</span>
-                            </td>
-                        </tr>,
+                            <BaseTable.Cell>
+                                <Badge ui="dashkit" variant={statusClass as 'success' | 'warning'}>
+                                    {statusText}
+                                </Badge>
+                            </BaseTable.Cell>
+                        </BaseTable.Row>,
                     );
                 }
             });
@@ -110,29 +120,29 @@ export function TokenInstructionsCard({ address }: { address: string }) {
 
     const fetching = history.status === FetchStatus.Fetching;
     return (
-        <div className="card">
+        <Card ui="dashkit">
             <HistoryCardHeader
                 fetching={fetching}
                 refresh={() => refresh()}
                 title="Token Instructions"
                 analyticsSection="token_instructions_header"
             />
-            <div className="table-responsive mb-0">
-                <table className="table table-sm table-nowrap card-table">
-                    <thead>
-                        <tr>
-                            <th className="text-muted w-1">Transaction Signature</th>
-                            {hasTimestamps && <th className="text-muted">Age</th>}
-                            <th className="text-muted">Instruction</th>
-                            <th className="text-muted">Program</th>
-                            <th className="text-muted">Result</th>
-                        </tr>
-                    </thead>
-                    <tbody className="list">{detailsList}</tbody>
-                </table>
-            </div>
+            <BaseTable ui="dashkit" variant="card" nowrap>
+                <BaseTable.Head>
+                    <BaseTable.Row>
+                        <BaseTable.HeaderCell className="w-px text-dk-gray-700">
+                            Transaction Signature
+                        </BaseTable.HeaderCell>
+                        {hasTimestamps && <BaseTable.HeaderCell className="text-dk-gray-700">Age</BaseTable.HeaderCell>}
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Instruction</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Program</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Result</BaseTable.HeaderCell>
+                    </BaseTable.Row>
+                </BaseTable.Head>
+                <BaseTable.Body>{detailsList}</BaseTable.Body>
+            </BaseTable>
             <HistoryCardFooter fetching={fetching} foundOldest={history.data.foundOldest} loadMore={() => loadMore()} />
-        </div>
+        </Card>
     );
 }
 

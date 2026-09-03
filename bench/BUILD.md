@@ -1,59 +1,68 @@
-> Sizes are approximate and rounded to reduce build-output noise. Run `pnpm build` to see exact values.
+> Sizes are gzipped, approximate, and rounded to reduce build-output noise. Next.js 16 (Turbopack) no longer prints sizes to stdout; these are derived by gzipping the first-load chunks listed in `.next/diagnostics/route-bundle-stats.json`. `Size` is First Load JS minus the chunks shared by all routes. Routes with no client JS (e.g. API routes) show `—`.
 
 | Type | Route | Size | First Load JS |
 |------|-------|------|---------------|
-| Static | `/` | 20 kB | 1.28 MB |
-| Static | `/_not-found` | 180 B | 190 kB |
-| Dynamic | `/address/[address]` | 10 kB | 1.28 MB |
-| Dynamic | `/address/[address]/anchor-account` | 10 kB | 1.26 MB |
-| Dynamic | `/address/[address]/anchor-program` | 200 B | 1.07 MB |
-| Dynamic | `/address/[address]/attestation` | 10 kB | 1.25 MB |
-| Dynamic | `/address/[address]/attributes` | 10 kB | 1.20 MB |
-| Dynamic | `/address/[address]/blockhashes` | 790 B | 1.20 MB |
-| Dynamic | `/address/[address]/compression` | 10 kB | 1.22 MB |
-| Dynamic | `/address/[address]/concurrent-merkle-tree` | 10 kB | 1.22 MB |
-| Dynamic | `/address/[address]/domains` | 10 kB | 1.20 MB |
-| Dynamic | `/address/[address]/entries` | 930 B | 1.20 MB |
-| Dynamic | `/address/[address]/feature-gate` | 200 B | 1.07 MB |
-| Dynamic | `/address/[address]/idl` | 160 kB | 1.48 MB |
-| Dynamic | `/address/[address]/instructions` | 10 kB | 1.27 MB |
-| Dynamic | `/address/[address]/metadata` | 10 kB | 1.21 MB |
-| Dynamic | `/address/[address]/nftoken-collection-nfts` | 10 kB | 1.21 MB |
-| Dynamic | `/address/[address]/program-multisig` | 10 kB | 1.26 MB |
-| Dynamic | `/address/[address]/rewards` | 10 kB | 1.20 MB |
-| Dynamic | `/address/[address]/security` | 10 kB | 1.32 MB |
-| Dynamic | `/address/[address]/slot-hashes` | 890 B | 1.20 MB |
-| Dynamic | `/address/[address]/stake-history` | 440 B | 1.20 MB |
-| Dynamic | `/address/[address]/token-extensions` | 10 kB | 1.23 MB |
-| Dynamic | `/address/[address]/tokens` | 10 kB | 1.38 MB |
-| Dynamic | `/address/[address]/transfers` | 10 kB | 1.28 MB |
-| Dynamic | `/address/[address]/verified-build` | 10 kB | 1.26 MB |
-| Dynamic | `/address/[address]/vote-history` | 920 B | 1.20 MB |
-| Dynamic | `/api/anchor` | 180 B | 190 kB |
-| Dynamic | `/api/ans-domains/[address]` | 180 B | 190 kB |
-| Dynamic | `/api/domain-info/[domain]` | 10 kB | 1.20 MB |
-| Dynamic | `/api/geo-location` | 180 B | 190 kB |
-| Dynamic | `/api/metadata/proxy` | 180 B | 190 kB |
-| Dynamic | `/api/ping/[network]` | 180 B | 190 kB |
-| Dynamic | `/api/program-metadata-idl` | 180 B | 190 kB |
-| Dynamic | `/api/receipt/price/[mintAddress]` | 180 B | 190 kB |
-| Dynamic | `/api/search` | 180 B | 190 kB |
-| Dynamic | `/api/sns-domains/[address]` | 180 B | 190 kB |
-| Dynamic | `/api/token-info` | 200 B | 1.07 MB |
-| Dynamic | `/api/verification/bluprynt/[mintAddress]` | 180 B | 190 kB |
-| Dynamic | `/api/verification/coingecko/[address]` | 180 B | 190 kB |
-| Dynamic | `/api/verification/jupiter/[mintAddress]` | 180 B | 190 kB |
-| Dynamic | `/api/verification/rugcheck/[mintAddress]` | 180 B | 190 kB |
-| Dynamic | `/block/[slot]` | 10 kB | 1.27 MB |
-| Dynamic | `/block/[slot]/accounts` | 10 kB | 1.20 MB |
-| Dynamic | `/block/[slot]/programs` | 10 kB | 1.20 MB |
-| Dynamic | `/block/[slot]/rewards` | 10 kB | 1.20 MB |
-| Dynamic | `/epoch/[epoch]` | 10 kB | 290 kB |
-| Static | `/feature-gates` | 10 kB | 1.21 MB |
-| Dynamic | `/og/feature-gate/[address]` | 180 B | 190 kB |
-| Dynamic | `/og/receipt/[signature]` | 180 B | 190 kB |
-| Static | `/opengraph-image.png` | 0 B | 0 B |
-| Static | `/tos` | 180 B | 190 kB |
-| Dynamic | `/tx/[signature]` | 70 kB | 1.66 MB |
-| Dynamic | `/tx/[signature]/inspect` | 430 B | 1.44 MB |
-| Static | `/tx/inspector` | 410 B | 1.44 MB |
+| Static | `/` | 130 kB | 530 kB |
+| Static | `/_not-found` | 0 B | 410 kB |
+| Dynamic | `/address/[address]` | 500 kB | 900 kB |
+| Dynamic | `/address/[address]/account-data` | 510 kB | 920 kB |
+| Dynamic | `/address/[address]/anchor-account` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/anchor-program` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/attestation` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/attributes` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/blockhashes` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/compression` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/concurrent-merkle-tree` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/domains` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/entries` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/feature-gate` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/idl` | 590 kB | 990 kB |
+| Dynamic | `/address/[address]/instructions` | 480 kB | 880 kB |
+| Dynamic | `/address/[address]/metadata` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/nftoken-collection-nfts` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/program-multisig` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/rewards` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/security` | 470 kB | 880 kB |
+| Dynamic | `/address/[address]/slot-hashes` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/stake-history` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/subscriptions` | 470 kB | 870 kB |
+| Dynamic | `/address/[address]/token-extensions` | 470 kB | 880 kB |
+| Dynamic | `/address/[address]/tokens` | 480 kB | 890 kB |
+| Dynamic | `/address/[address]/transfers` | 480 kB | 880 kB |
+| Dynamic | `/address/[address]/verified-build` | 470 kB | 880 kB |
+| Dynamic | `/address/[address]/vote-history` | 470 kB | 870 kB |
+| Dynamic | `/api/ans-domains/[address]` | — | — |
+| Dynamic | `/api/domain-info/[domain]` | — | — |
+| Dynamic | `/api/geo-location` | — | — |
+| Dynamic | `/api/idl-latest` | — | — |
+| Dynamic | `/api/metadata/proxy` | — | — |
+| Dynamic | `/api/ping/[network]` | — | — |
+| Dynamic | `/api/search` | — | — |
+| Dynamic | `/api/security-txt` | — | — |
+| Dynamic | `/api/slot-time` | — | — |
+| Dynamic | `/api/sns-domains/[address]` | — | — |
+| Dynamic | `/api/stake-rewards/[address]` | — | — |
+| Dynamic | `/api/supply` | — | — |
+| Dynamic | `/api/token-image/[mintAddress]` | — | — |
+| Dynamic | `/api/token-info` | — | — |
+| Dynamic | `/api/token-market-data/[address]` | — | — |
+| Dynamic | `/api/token-price/[mintAddress]` | — | — |
+| Dynamic | `/api/verification/bluprynt/[mintAddress]` | — | — |
+| Dynamic | `/api/verification/coingecko/[address]` | — | — |
+| Dynamic | `/api/verification/jupiter/[mintAddress]` | — | — |
+| Dynamic | `/api/verification/rugcheck/[mintAddress]` | — | — |
+| Dynamic | `/block/[slot]` | 260 kB | 660 kB |
+| Dynamic | `/block/[slot]/accounts` | 250 kB | 650 kB |
+| Dynamic | `/block/[slot]/programs` | 250 kB | 650 kB |
+| Dynamic | `/block/[slot]/rewards` | 250 kB | 650 kB |
+| Dynamic | `/epoch/[epoch]` | 10 kB | 420 kB |
+| Static | `/feature-gates` | 40 kB | 450 kB |
+| Dynamic | `/mcp` | — | — |
+| Static | `/mcp/start` | 20 kB | 420 kB |
+| Dynamic | `/og/feature-gate/[address]` | — | — |
+| Dynamic | `/og/receipt/[signature]` | — | — |
+| Static | `/opengraph-image.png` | — | — |
+| Static | `/tos` | 880 B | 410 kB |
+| Dynamic | `/tx/[signature]` | 510 kB | 910 kB |
+| Dynamic | `/tx/[signature]/inspect` | 440 kB | 840 kB |
+| Static | `/tx/inspector` | 440 kB | 840 kB |

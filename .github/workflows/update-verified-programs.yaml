@@ -2,15 +2,12 @@ name: Update Verified Programs
 
 on:
   schedule:
-    - cron: '0 8 * * *' # Daily at 8 AM UTC
+    - cron: "0 8 * * *" # Daily at 8 AM UTC
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
-
-env:
-  PNPM_CACHE_FOLDER: ~/.pnpm-store
 
 jobs:
   update:
@@ -19,51 +16,32 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Read .nvmrc
         id: nvmrc
         run: echo "NODE_VERSION=$(cat .nvmrc)" >> $GITHUB_OUTPUT
 
-      - name: Install package manager
-        uses: pnpm/action-setup@v4
-
-      - name: Setup pnpm config
-        run: pnpm config set store-dir ${{ env.PNPM_CACHE_FOLDER }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - name: Setup pnpm and Node.js
+        uses: ./.github/actions/pnpm-setup
         with:
           node-version: ${{ steps.nvmrc.outputs.NODE_VERSION }}
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
 
       - name: Fetch verified programs
         env:
           MAINNET_RPC_URL: ${{ secrets.MAINNET_RPC_URL }}
         run: pnpm exec tsx scripts/update-verified-programs.ts
 
-      - name: Check for changes
-        id: diff
-        run: |
-          git diff --exit-code public/verified-programs.json && echo "changed=false" >> $GITHUB_OUTPUT || echo "changed=true" >> $GITHUB_OUTPUT
-
       - name: Create or update pull request
-        if: steps.diff.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          branch="chore/update-verified-programs"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git add public/verified-programs.json
-          git commit -m "chore: update verified programs list"
-          git push -f origin "$branch"
-          gh pr create \
-            --title "chore: update verified programs list" \
-            --body "Automated daily update of verified programs from OSecure." \
-            --base master 2>/dev/null || echo "PR already exists"
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "chore: update verified programs list"
+          title: "chore: update verified programs list"
+          body: "Automated daily update of verified programs from OSecure."
+          branch: "chore/update-verified-programs"
+          base: master
+          add-paths: public/verified-programs.json
+          maintainer-can-modify: true
+          delete-branch: true

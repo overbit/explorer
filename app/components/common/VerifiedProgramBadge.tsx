@@ -1,11 +1,14 @@
 import { PublicKey } from '@solana/web3.js';
 import Link from 'next/link';
 
+import { Badge } from '@/app/components/shared/ui/badge';
 import { useCluster } from '@/app/providers/cluster';
-import { Cluster } from '@/app/utils/cluster';
+import { CardTitle } from '@/app/shared/ui/Card';
 import { useClusterPath } from '@/app/utils/url';
-import { useIsProgramVerified } from '@/app/utils/verified-builds';
+import { supportsVerifiedBuilds, useIsProgramVerified } from '@/app/utils/verified-builds';
 import { ProgramDataAccountInfo } from '@/app/validators/accounts/upgradeable-program';
+
+type BadgeVariant = NonNullable<Parameters<typeof Badge>[0]['variant']>;
 
 export function VerifiedProgramBadge({
     programData,
@@ -25,42 +28,38 @@ export function VerifiedProgramBadge({
     });
     const verifiedBuildTabPath = useClusterPath({ pathname: `/address/${pubkey.toBase58()}/verified-build` });
 
-    if (cluster !== Cluster.MainnetBeta) {
+    if (!supportsVerifiedBuilds(cluster)) {
         return (
-            <h3 className="mb-0">
-                <span className="badge bg-warning-soft rank">Verified Builds only available on Mainnet</span>
-            </h3>
+            <CardTitle as="h3" ui="dashkit">
+                <Badge ui="dashkit" variant="warning">
+                    Verified Builds only available on Mainnet and Devnet
+                </Badge>
+            </CardTitle>
         );
     } else if (isLoading) {
         return (
-            <h3 className="mb-0">
-                <span className="badge">Loading...</span>
-            </h3>
+            <CardTitle as="h3" ui="dashkit">
+                <Badge ui="dashkit">Loading...</Badge>
+            </CardTitle>
         );
     } else if (error) {
         return (
-            <h3 className="mb-0">
-                <span className="badge bg-warning-soft rank">Error fetching verified build information</span>
-            </h3>
+            <CardTitle as="h3" ui="dashkit">
+                <Badge ui="dashkit" variant="warning">
+                    Error fetching verified build information
+                </Badge>
+            </CardTitle>
         );
     } else {
-        let badgeClass = '';
-        let badgeText = '';
-
-        if (isVerified) {
-            badgeClass = 'bg-success-soft';
-            badgeText = 'Program Source Verified';
-        } else {
-            badgeClass = 'bg-warning-soft';
-            badgeText = 'Program Not Verified';
-        }
+        const badgeVariant: BadgeVariant = isVerified ? 'success' : 'warning';
+        const badgeText = isVerified ? 'Program Source Verified' : 'Program Not Verified';
 
         return (
-            <h3 className="mb-0">
-                <Link className={`c-pointer badge ${badgeClass} rank`} href={verifiedBuildTabPath}>
-                    {badgeText}
-                </Link>
-            </h3>
+            <CardTitle as="h3" ui="dashkit">
+                <Badge ui="dashkit" variant={badgeVariant} className="cursor-pointer" asChild>
+                    <Link href={verifiedBuildTabPath}>{badgeText}</Link>
+                </Badge>
+            </CardTitle>
         );
     }
 }

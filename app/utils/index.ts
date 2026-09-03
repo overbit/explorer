@@ -5,11 +5,6 @@ import { HumanizeDuration, HumanizeDurationLanguage } from 'humanize-duration-ts
 export const LAMPORTS_PER_SOL = 1_000_000_000;
 export const MICRO_LAMPORTS_PER_LAMPORT = 1_000_000;
 
-export const NUM_TICKS_PER_SECOND = 160;
-export const DEFAULT_TICKS_PER_SLOT = 64;
-export const NUM_SLOTS_PER_SECOND = NUM_TICKS_PER_SECOND / DEFAULT_TICKS_PER_SLOT;
-export const MS_PER_SLOT = 1000 / NUM_SLOTS_PER_SECOND;
-
 export const INNER_INSTRUCTIONS_START_SLOT = 46915769;
 
 export type SignatureProps = {
@@ -87,7 +82,8 @@ HUMANIZER.addLanguage('short', {
     y: () => 'y',
 });
 
-export function slotsToHumanString(slots: number, slotTime = MS_PER_SLOT): string {
+/** `slotTime` has no default: clusters run at different rates, and only measurement gives the rate. */
+export function slotsToHumanString(slots: number, slotTime: number): string {
     return HUMANIZER.humanize(slots * slotTime);
 }
 
@@ -134,6 +130,11 @@ export function abbreviatedNumber(value: number, fixed = 1) {
     if (value >= 1e6 && value < 1e9) return `${+(value / 1e6).toFixed(fixed)}M`;
     if (value >= 1e9 && value < 1e12) return `${+(value / 1e9).toFixed(fixed)}B`;
     if (value >= 1e12) return `${+(value / 1e12).toFixed(fixed)}T`;
+}
+
+export function pluralUnits(n: number | bigint, unit: 'hour' | 'second'): string {
+    const isOne = typeof n === 'bigint' ? n === 1n : n === 1;
+    return `${n.toString()} ${isOne ? unit : `${unit}s`}`;
 }
 
 export const pubkeyToString = (key: PublicKey | string = '') => {

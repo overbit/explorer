@@ -9,6 +9,7 @@ import { useFetchAccountInfo } from '@providers/accounts';
 import { FetchStatus } from '@providers/cache';
 import { useFetchRawTransaction, useRawTransactionDetails } from '@providers/transactions/raw';
 import usePrevious from '@react-hook/previous';
+import { getBase58Decoder, getBase58Encoder } from '@solana/kit';
 import {
     type CompiledInnerInstruction,
     Connection,
@@ -17,16 +18,27 @@ import {
     PublicKey,
     VersionedMessage,
 } from '@solana/web3.js';
-import { generated, PROGRAM_ADDRESS as SQUADS_V4_PROGRAM_ADDRESS } from '@sqds/multisig';
-import { useClusterPath } from '@utils/url';
-import bs58 from 'bs58';
+import { generated, getBatchTransactionPda, PROGRAM_ADDRESS as SQUADS_V4_PROGRAM_ADDRESS } from '@sqds/multisig';
+import { ClusterStatus } from '@utils/cluster';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import React from 'react';
 import useSWR from 'swr';
 
+import { Badge } from '@/app/components/shared/ui/badge';
+import { Button } from '@/app/components/shared/ui/button';
 import { useCluster } from '@/app/providers/cluster';
 import { DownloadDropdown } from '@/app/shared/components/DownloadDropdown';
 import { toBase64 } from '@/app/shared/lib/bytes';
+import {
+    bridgeV1MessageBytes,
+    isV1MessageBytes,
+    V1_TRANSACTION_SIZE_LIMIT,
+    type V1TransactionConfig,
+} from '@/app/shared/lib/v1-message-bridge';
+import { Card, CardHeader, CardTitle } from '@/app/shared/ui/Card';
+import { PageContainer } from '@/app/shared/ui/page-container/PageContainer';
+import { BaseTable } from '@/app/shared/ui/Table';
+import { useClusterPath } from '@/app/utils/url';
 
 import { AccountsCard } from './AccountsCard';
 import { AddressTableLookupsCard } from './AddressTableLookupsCard';
@@ -35,11 +47,46 @@ import { InstructionsSection } from './InstructionsSection';
 import { MIN_MESSAGE_LENGTH, RawInput } from './RawInputCard';
 import { TransactionSignatures } from './SignaturesCard';
 
-const { VaultTransaction } = generated;
+const BASE58_ENCODER = getBase58Encoder();
+const BASE58_DECODER = getBase58Decoder();
+
+const { Batch, VaultBatchTransaction, VaultTransaction, batchDiscriminator } = generated;
+
+// Convert a Squads VaultTransactionMessage (shared by VaultTransaction and the inner
+// transactions of a Batch) into a web3.js VersionedMessage the inspector can render.
+export function vaultMessageToVersionedMessage(message: typeof VaultTransaction.prototype.message): VersionedMessage {
+    return new MessageV0({
+        addressTableLookups: message.addressTableLookups.map(x => ({
+            ...x,
+            readonlyIndexes: Array.from(x.readonlyIndexes),
+            writableIndexes: Array.from(x.writableIndexes),
+        })),
+        compiledInstructions: message.instructions.map(instruction => ({
+            accountKeyIndexes: Array.from(instruction.accountIndexes),
+            data: instruction.data,
+            programIdIndex: instruction.programIdIndex,
+        })),
+        header: {
+            numReadonlySignedAccounts: message.numSigners - message.numWritableSigners,
+            numReadonlyUnsignedAccounts:
+                message.accountKeys.length - message.numSigners - message.numWritableNonSigners,
+            numRequiredSignatures: message.numSigners,
+        },
+        recentBlockhash: BASE58_DECODER.decode(Uint8Array.from(new Array(32).fill(0))),
+        staticAccountKeys: message.accountKeys,
+    });
+}
 
 export type TransactionData = {
     rawMessage: Uint8Array;
     message: VersionedMessage;
+    /**
+     * Set when `rawMessage` holds a v1 message. `message` is then a bridged view whose
+     * `version` getter still reports 0, so version-dependent rendering must read this field.
+     */
+    version?: 1;
+    /** Message-level resource limits; v1 only, and only when the message sets at least one. */
+    transactionConfig?: V1TransactionConfig;
     signatures?: (string | undefined)[];
     accountBalances?: {
         preBalances: number[];
@@ -95,7 +142,7 @@ function decodeSignatures(signaturesParam: string): (string | undefined)[] {
         }
 
         try {
-            bs58.decode(signature);
+            BASE58_ENCODER.encode(signature);
             validSignatures.push(signature);
         } catch (_err) {
             throw new Error('Signature is not valid base58');
@@ -159,6 +206,11 @@ function decodeUrlParams(
             throw new Error('message buffer is too short');
         }
 
+        if (isV1MessageBytes(buffer)) {
+            const { message, transactionConfig } = bridgeV1MessageBytes(buffer);
+            return [{ message, rawMessage: buffer, signatures, transactionConfig, version: 1 }, params, refreshUrl];
+        }
+
         const message = VersionedMessage.deserialize(buffer);
         const data = {
             message,
@@ -175,32 +227,65 @@ function decodeUrlParams(
 
 function SquadsProposalInspectorCard({ account, onClear }: { account: string; onClear: () => void }) {
     const { url } = useCluster();
+    const [selected, setSelected] = React.useState(0);
 
-    const fetcher = React.useCallback(async () => {
+    // Reset the selected inner transaction whenever a different account is inspected.
+    React.useEffect(() => {
+        setSelected(0);
+    }, [account]);
+
+    const fetcher = React.useCallback(async (): Promise<(VersionedMessage | undefined)[]> => {
         const connection = new Connection(url);
-        try {
-            // First check if the account exists and is owned by the Squads program
-            const accountInfo = await connection.getAccountInfo(new PublicKey(account), 'confirmed');
+        const pubkey = new PublicKey(account);
 
-            if (!accountInfo) {
-                throw new Error('Account not found');
-            }
-
-            // Check if the account is owned by the Squads program
-            const isSquadsAccount = accountInfo.owner.toString() === SQUADS_V4_PROGRAM_ADDRESS.toString();
-
-            if (!isSquadsAccount) {
-                throw new Error(`Account ${account} is not a valid Squads transaction account`);
-            }
-
-            return await VaultTransaction.fromAccountAddress(connection, new PublicKey(account), 'confirmed');
-        } catch (err) {
-            throw err instanceof Error ? err : new Error('Failed to fetch account data');
+        // First check if the account exists and is owned by the Squads program
+        const accountInfo = await connection.getAccountInfo(pubkey, 'confirmed');
+        if (!accountInfo) {
+            throw new Error('Account not found');
         }
+        if (accountInfo.owner.toString() !== SQUADS_V4_PROGRAM_ADDRESS.toString()) {
+            throw new Error(`Account ${account} is not a valid Squads transaction account`);
+        }
+
+        // The account discriminator (first 8 bytes) distinguishes a Batch — which holds
+        // many inner transactions — from a single VaultTransaction.
+        const discriminator = accountInfo.data.subarray(0, 8);
+        const isBatch = batchDiscriminator.every((byte, i) => byte === discriminator[i]);
+
+        if (isBatch) {
+            const batch = await Batch.fromAccountAddress(connection, pubkey, 'confirmed');
+            const batchIndex = BigInt(batch.index.toString());
+            // Inner VaultBatchTransactions are 1-indexed PDAs derived from the multisig + batch index.
+            // Each fetch is isolated so one unavailable transaction (e.g. a PDA closed after
+            // execution) doesn't sink the whole batch — failed slots become undefined and render
+            // an "unavailable" notice below.
+            const results = await Promise.all(
+                Array.from({ length: batch.size }, async (_unused, i) => {
+                    try {
+                        const [pda] = getBatchTransactionPda({
+                            batchIndex,
+                            multisigPda: batch.multisig,
+                            transactionIndex: i + 1,
+                        });
+                        const vbt = await VaultBatchTransaction.fromAccountAddress(connection, pda, 'confirmed');
+                        return vaultMessageToVersionedMessage(vbt.message);
+                    } catch {
+                        return undefined;
+                    }
+                }),
+            );
+            if (results.every(message => message === undefined)) {
+                throw new Error('None of the batch transactions could be loaded');
+            }
+            return results;
+        }
+
+        const vaultTransaction = await VaultTransaction.fromAccountAddress(connection, pubkey, 'confirmed');
+        return [vaultMessageToVersionedMessage(vaultTransaction.message)];
     }, [account, url]);
 
     const {
-        data: vaultTransaction,
+        data: messages,
         error,
         isLoading,
     } = useSWR(['squads-proposal', account, url], fetcher, {
@@ -213,56 +298,57 @@ function SquadsProposalInspectorCard({ account, onClear }: { account: string; on
         return <LoadingCard message="Loading Squads transaction..." />;
     }
 
-    if (error || !vaultTransaction) {
+    if (error || !messages || messages.length === 0) {
         return (
-            <ErrorCard text={`Error loading vault transaction: ${error?.message}`} retry={onClear} retryText="Clear" />
+            <ErrorCard
+                text={`Error loading Squads transaction: ${error?.message ?? 'no transactions found'}`}
+                retry={onClear}
+                retryText="Clear"
+            />
         );
     }
 
-    // Convert VaultTransactionMessage to a format compatible with Message
-    const convertVaultTransactionToMessage = (vaultTx: typeof VaultTransaction.prototype): VersionedMessage => {
-        const { message } = vaultTx;
-        const accountKeys = message.accountKeys;
-
-        // Create a standard Message object with the necessary fields
-        const solanaMessage = new MessageV0({
-            addressTableLookups: message.addressTableLookups.map(x => ({
-                ...x,
-                readonlyIndexes: Array.from(x.readonlyIndexes),
-                writableIndexes: Array.from(x.writableIndexes),
-            })),
-            compiledInstructions: message.instructions.map(instruction => ({
-                accountKeyIndexes: Array.from(instruction.accountIndexes),
-                data: instruction.data,
-                programIdIndex: instruction.programIdIndex,
-            })),
-            header: {
-                numReadonlySignedAccounts: message.numSigners - message.numWritableSigners,
-                numReadonlyUnsignedAccounts:
-                    message.accountKeys.length - message.numSigners - message.numWritableNonSigners,
-                numRequiredSignatures: message.numSigners,
-            },
-            recentBlockhash: bs58.encode(Uint8Array.from(new Array(32).fill(0))),
-            staticAccountKeys: accountKeys,
-        });
-
-        return solanaMessage;
-    };
-
-    // Create a serialized version of the message for rawMessage
-    const convertedMessage = convertVaultTransactionToMessage(vaultTransaction);
-    const serializedMessage = convertedMessage.serialize();
+    const activeIndex = Math.min(selected, messages.length - 1);
+    const message = messages[activeIndex];
 
     return (
-        <LoadedView
-            transaction={{
-                message: convertedMessage,
-                rawMessage: serializedMessage,
-                signatures: undefined,
-            }}
-            onClear={onClear}
-            showTokenBalanceChanges={false}
-        />
+        <>
+            {messages.length > 1 && (
+                <Card ui="dashkit" className="mb-4">
+                    <CardHeader ui="dashkit" className="flex-wrap gap-2">
+                        <CardTitle as="h3" ui="dashkit">
+                            Batch · {messages.length} transactions
+                        </CardTitle>
+                        <div className="flex flex-wrap gap-2">
+                            {messages.map((_unused, i) => (
+                                <Button
+                                    key={i}
+                                    ui="dashkit"
+                                    size="sm"
+                                    variant={i === activeIndex ? 'primary' : 'white'}
+                                    onClick={() => setSelected(i)}
+                                >
+                                    {i + 1}
+                                </Button>
+                            ))}
+                        </div>
+                    </CardHeader>
+                </Card>
+            )}
+            {message ? (
+                <LoadedView
+                    transaction={{
+                        message,
+                        rawMessage: message.serialize(),
+                        signatures: undefined,
+                    }}
+                    onClear={onClear}
+                    showTokenBalanceChanges={false}
+                />
+            ) : (
+                <ErrorCard text="This batch transaction is unavailable — its account may have been closed after execution." />
+            )}
+        </>
     );
 }
 
@@ -277,6 +363,7 @@ export function TransactionInspectorPage({
     const currentSearchParams = useSearchParams();
     const currentPathname = usePathname();
     const router = useRouter();
+    const inspectorPath = useClusterPath({ pathname: '/tx/inspector' });
     const [paramString, setParamString] = React.useState<string>();
 
     // Sync message with url search params
@@ -285,14 +372,22 @@ export function TransactionInspectorPage({
         if (signature) return;
         if (inspectorData && inspectorData !== prevInspectorData) {
             if (isSquadsProposalAccountData(inspectorData)) {
-                // Handle Squads proposal URL params
-                const nextQueryParams = new URLSearchParams(currentSearchParams?.toString());
-                nextQueryParams.set('squadsTx', inspectorData.account);
-                // Remove any other transaction params that might exist
-                nextQueryParams.delete('message');
-                nextQueryParams.delete('signatures');
-                const queryString = nextQueryParams.toString();
-                router.replace(`${currentPathname}?${queryString}`);
+                // Only rewrite the URL when it doesn't already encode this squadsTx. Without this
+                // guard, router.replace to an identical URL yields a fresh searchParams ref, which
+                // re-runs the decode effect → setInspectorData(new object) → replace → infinite loop.
+                // (Mirrors the guard the raw-message branch below already applies.)
+                const alreadyInSync =
+                    currentSearchParams?.get('squadsTx') === inspectorData.account &&
+                    !currentSearchParams?.get('message') &&
+                    !currentSearchParams?.get('signatures');
+                if (!alreadyInSync) {
+                    const nextQueryParams = new URLSearchParams(currentSearchParams?.toString());
+                    nextQueryParams.set('squadsTx', inspectorData.account);
+                    // Remove any other transaction params that might exist
+                    nextQueryParams.delete('message');
+                    nextQueryParams.delete('signatures');
+                    router.replace(`${currentPathname}?${nextQueryParams.toString()}`);
+                }
                 return;
             }
 
@@ -319,7 +414,7 @@ export function TransactionInspectorPage({
         }
     }, [currentPathname, currentSearchParams, prevInspectorData, router, signature, inspectorData]);
 
-    const reset = React.useCallback(() => {
+    const resetParams = React.useCallback(() => {
         const nextQueryParams = new URLSearchParams(currentSearchParams?.toString());
         nextQueryParams.delete('message');
         nextQueryParams.delete('signatures');
@@ -327,6 +422,10 @@ export function TransactionInspectorPage({
         const queryString = nextQueryParams?.toString();
         router.push(`${currentPathname}${queryString ? `?${queryString}` : ''}`);
     }, [currentPathname, currentSearchParams, router]);
+
+    const resetToInspectorPage = React.useCallback(() => {
+        router.push(inspectorPath);
+    }, [inspectorPath, router]);
 
     // Decode the message url param whenever it changes
     React.useEffect(() => {
@@ -346,33 +445,38 @@ export function TransactionInspectorPage({
     }, [currentPathname, currentSearchParams, router]);
 
     return (
-        <div className="container mt-4">
-            <div className="header">
-                <div className="header-body">
-                    <h2 className="header-title">Transaction Inspector</h2>
+        <PageContainer className="mt-6">
+            <div className="mb-8">
+                <div className="border-0 border-b border-solid border-dk-gray-700-dark py-6">
+                    <h2 className="mb-0">Transaction Inspector</h2>
                 </div>
             </div>
             {signature ? (
-                <PermalinkView signature={signature} reset={reset} showTokenBalanceChanges={showTokenBalanceChanges} />
+                <PermalinkView
+                    signature={signature}
+                    reset={resetToInspectorPage}
+                    showTokenBalanceChanges={showTokenBalanceChanges}
+                />
             ) : inspectorData ? (
                 isSquadsProposalAccountData(inspectorData) ? (
-                    <SquadsProposalInspectorCard account={inspectorData.account} onClear={reset} />
+                    <SquadsProposalInspectorCard account={inspectorData.account} onClear={resetParams} />
                 ) : (
                     <LoadedView
                         transaction={inspectorData}
-                        onClear={reset}
+                        onClear={resetParams}
                         showTokenBalanceChanges={showTokenBalanceChanges}
                     />
                 )
             ) : (
                 <RawInput value={paramString} setTransactionData={setInspectorData} />
             )}
-        </div>
+        </PageContainer>
     );
 }
 
-function PermalinkView({
+export function PermalinkView({
     signature,
+    reset,
     showTokenBalanceChanges,
 }: {
     signature: string;
@@ -381,34 +485,64 @@ function PermalinkView({
 }) {
     const details = useRawTransactionDetails(signature);
     const fetchTransaction = useFetchRawTransaction();
-    const refreshTransaction = () => fetchTransaction(signature);
+    const { status } = useCluster();
     const transaction = details?.data?.raw;
-    const inspectorPath = useClusterPath({ pathname: '/tx/inspector' });
-    const router = useRouter();
-    const reset = React.useCallback(() => {
-        router.push(inspectorPath);
-    }, [inspectorPath, router]);
 
-    // Fetch details on load
+    // Fetch on load at 'confirmed' (matches providers/transactions/parsed.tsx) so freshly-confirmed txs resolve fast.
+    const fetchConfirmedTx = React.useCallback(() => {
+        fetchTransaction(signature, 'confirmed');
+    }, [fetchTransaction, signature]);
+
+    // Wait for the cluster to connect before fetching — otherwise the first render fetches against the
+    // default (mainnet) URL before the ?cluster= param settles, wasting a request on the wrong cluster.
     React.useEffect(() => {
-        if (!details) fetchTransaction(signature);
-    }, [signature, details, fetchTransaction]);
+        if (!transaction && status === ClusterStatus.Connected) {
+            fetchConfirmedTx();
+        }
+    }, [transaction, fetchConfirmedTx, status]);
+
+    // The inspector renders a web3.js `VersionedMessage`; a v1 message gets there through a
+    // bridged view over the wire bytes, which also carries the message's resource limits so
+    // every entry path derives them from the same decode. The view is memoized because its
+    // identity keys the downstream account-fetching effects and memos.
+    const bridged = React.useMemo(() => {
+        if (!transaction || transaction.message || transaction.version !== 1) {
+            return undefined;
+        }
+        try {
+            return bridgeV1MessageBytes(transaction.messageBytes);
+        } catch {
+            return undefined;
+        }
+    }, [transaction]);
 
     if (!details || details.status === FetchStatus.Fetching) {
         return <LoadingCard />;
     } else if (details.status === FetchStatus.FetchFailed) {
-        return <ErrorCard retry={refreshTransaction} text="Failed to fetch transaction" />;
+        return <ErrorCard retry={fetchConfirmedTx} text="Failed to fetch transaction" />;
     } else if (!transaction) {
         return <ErrorCard text="Transaction was not found" retry={reset} retryText="Reset" />;
     }
 
-    const { message, signatures, meta } = transaction;
-    const tx = {
+    const { message, messageBytes, signatures, meta } = transaction;
+    const resolvedMessage = message ?? bridged?.message;
+    if (!resolvedMessage) {
+        return (
+            <ErrorCard
+                text={`The inspector does not support v${transaction.version} transactions`}
+                retry={reset}
+                retryText="Reset"
+            />
+        );
+    }
+
+    const tx: TransactionData = {
         accountBalances: meta,
         compiledInnerInstructions: meta?.innerInstructions,
-        message,
-        rawMessage: message.serialize(),
+        message: resolvedMessage,
+        rawMessage: messageBytes,
         signatures,
+        ...(bridged ? { transactionConfig: bridged.transactionConfig, version: 1 as const } : undefined),
     };
     return <LoadedView transaction={tx} onClear={reset} showTokenBalanceChanges={showTokenBalanceChanges} />;
 }
@@ -422,7 +556,8 @@ function LoadedView({
     onClear: () => void;
     showTokenBalanceChanges: boolean;
 }) {
-    const { message, rawMessage, signatures, accountBalances, compiledInnerInstructions } = transaction;
+    const { message, rawMessage, signatures, accountBalances, compiledInnerInstructions, version, transactionConfig } =
+        transaction;
 
     const fetchAccountInfo = useFetchAccountInfo();
     React.useEffect(() => {
@@ -433,7 +568,13 @@ function LoadedView({
 
     return (
         <>
-            <OverviewCard message={message} raw={rawMessage} onClear={onClear} />
+            <OverviewCard
+                message={message}
+                raw={rawMessage}
+                onClear={onClear}
+                isV1={version === 1}
+                transactionConfig={transactionConfig}
+            />
             <SimulatorCard
                 message={message}
                 showTokenBalanceChanges={showTokenBalanceChanges}
@@ -441,7 +582,8 @@ function LoadedView({
             />
             {signatures && <TransactionSignatures message={message} signatures={signatures} rawMessage={rawMessage} />}
             <AccountsCard message={message} />
-            <AddressTableLookupsCard message={message} />
+            {/* A v1 message carries static accounts only, so there are no lookups to render. */}
+            {version !== 1 && <AddressTableLookupsCard message={message} />}
             <InstructionsSection message={message} compiledInnerInstructions={compiledInnerInstructions} />
         </>
     );
@@ -456,65 +598,116 @@ function OverviewCard({
     raw,
     onClear,
     signature,
+    isV1,
+    transactionConfig,
 }: {
     message: VersionedMessage;
     raw: Uint8Array;
     onClear: () => void;
     signature?: string;
+    isV1?: boolean;
+    transactionConfig?: V1TransactionConfig;
 }) {
     const fee = message.header.numRequiredSignatures * DEFAULT_FEES.lamportsPerSignature;
     const feePayerValidator = createFeePayerValidator(fee);
 
+    // The v1 wire envelope has no signature-count byte — the count is read from the message header.
     const size = React.useMemo(() => {
-        const sigBytes = 1 + 64 * message.header.numRequiredSignatures;
+        const sigBytes = (isV1 ? 0 : 1) + 64 * message.header.numRequiredSignatures;
         return sigBytes + raw.length;
-    }, [message, raw]);
+    }, [message, raw, isV1]);
+    const sizeLimit = isV1 ? V1_TRANSACTION_SIZE_LIMIT : PACKET_DATA_SIZE;
 
     return (
         <>
-            <div className="card">
-                <div className="card-header e-gap-2">
-                    <h3 className="card-header-title">Transaction Overview</h3>
-                    <button className="btn btn-sm d-flex btn-white" onClick={onClear}>
+            <Card ui="dashkit">
+                <CardHeader ui="dashkit" className="gap-2">
+                    <CardTitle as="h3" ui="dashkit">
+                        Transaction Overview
+                    </CardTitle>
+                    <Button ui="dashkit" variant="white" size="sm" className="flex" onClick={onClear}>
                         Clear
-                    </button>
+                    </Button>
                     <DownloadDropdown filename={signature || 'signature'} data={raw} />
-                </div>
+                </CardHeader>
                 <TableCardBody>
-                    <tr>
-                        <td>Serialized Size</td>
-                        <td className="text-lg-end">
-                            <div className="d-flex align-items-end flex-column">
+                    <BaseTable.Row>
+                        <BaseTable.Cell>Serialized Size</BaseTable.Cell>
+                        <BaseTable.Cell className="text-right">
+                            <div className="flex flex-col items-end">
                                 {size} bytes
-                                <span className={size <= PACKET_DATA_SIZE ? 'text-muted' : 'text-warning'}>
-                                    Max transaction size is {PACKET_DATA_SIZE} bytes
+                                <span className={size <= sizeLimit ? 'text-dk-gray-700' : 'text-dk-warning-on-dark'}>
+                                    Max transaction size is {sizeLimit} bytes
                                 </span>
                             </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>Fees</td>
-                        <td className="text-lg-end">
-                            <div className="d-flex align-items-end flex-column">
+                        </BaseTable.Cell>
+                    </BaseTable.Row>
+                    <BaseTable.Row>
+                        <BaseTable.Cell>Fees</BaseTable.Cell>
+                        <BaseTable.Cell className="text-right">
+                            <div className="flex flex-col items-end">
                                 <SolBalance lamports={fee} />
-                                <span className="text-muted">
+                                <span className="text-dk-gray-700">
                                     {`Each signature costs ${DEFAULT_FEES.lamportsPerSignature} lamports`}
                                 </span>
                             </div>
-                        </td>
-                    </tr>
+                        </BaseTable.Cell>
+                    </BaseTable.Row>
 
-                    <tr>
-                        <td>
-                            <div className="d-flex align-items-start flex-column">
+                    {isV1 && (
+                        <BaseTable.Row>
+                            <BaseTable.Cell>Transaction Version</BaseTable.Cell>
+                            <BaseTable.Cell className="text-right uppercase">v1</BaseTable.Cell>
+                        </BaseTable.Row>
+                    )}
+                    {transactionConfig?.computeUnitLimit !== undefined && (
+                        <BaseTable.Row>
+                            <BaseTable.Cell>Compute unit limit</BaseTable.Cell>
+                            <BaseTable.Cell className="text-right">
+                                {transactionConfig.computeUnitLimit.toLocaleString('en-US')}
+                            </BaseTable.Cell>
+                        </BaseTable.Row>
+                    )}
+                    {transactionConfig?.priorityFeeLamports !== undefined && (
+                        <BaseTable.Row>
+                            <BaseTable.Cell>Priority fee (total)</BaseTable.Cell>
+                            <BaseTable.Cell className="text-right">
+                                <SolBalance lamports={transactionConfig.priorityFeeLamports} />
+                            </BaseTable.Cell>
+                        </BaseTable.Row>
+                    )}
+                    {transactionConfig?.loadedAccountsDataSizeLimit !== undefined && (
+                        <BaseTable.Row>
+                            <BaseTable.Cell>Loaded accounts data size limit</BaseTable.Cell>
+                            <BaseTable.Cell className="text-right">
+                                {transactionConfig.loadedAccountsDataSizeLimit.toLocaleString('en-US')}
+                            </BaseTable.Cell>
+                        </BaseTable.Row>
+                    )}
+                    {transactionConfig?.heapSize !== undefined && (
+                        <BaseTable.Row>
+                            <BaseTable.Cell>Heap size</BaseTable.Cell>
+                            <BaseTable.Cell className="text-right">
+                                {transactionConfig.heapSize.toLocaleString('en-US')}
+                            </BaseTable.Cell>
+                        </BaseTable.Row>
+                    )}
+
+                    <BaseTable.Row>
+                        <BaseTable.Cell>
+                            <div className="flex flex-col items-start">
                                 Fee payer
-                                <span className="mt-1">
-                                    <span className="badge bg-info-soft me-2">Signer</span>
-                                    <span className="badge bg-danger-soft me-2">Writable</span>
+                                <span className="mt-[3px]">
+                                    <Badge ui="dashkit" variant="info" className="mr-1.5">
+                                        Signer
+                                    </Badge>
+                                    <Badge ui="dashkit" variant="destructive" className="mr-1.5">
+                                        Writable
+                                    </Badge>
                                 </span>
                             </div>
-                        </td>
-                        <td className="text-end">
+                        </BaseTable.Cell>
+                        <BaseTable.Cell className="text-right">
                             {message.staticAccountKeys.length === 0 ? (
                                 'No Fee Payer'
                             ) : (
@@ -523,10 +716,10 @@ function OverviewCard({
                                     validator={feePayerValidator}
                                 />
                             )}
-                        </td>
-                    </tr>
+                        </BaseTable.Cell>
+                    </BaseTable.Row>
                 </TableCardBody>
-            </div>
+            </Card>
         </>
     );
 }

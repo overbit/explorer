@@ -1,15 +1,16 @@
+import { type InstructionSummary } from '@entities/transaction-data';
+
 import { Skeleton } from '@/app/components/shared/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/shared/ui/tooltip';
-import { TransactionInstructionInfo } from '@/app/utils/instruction';
 
 const INLINE_LIMIT = 3;
 
-export function InstructionList({ instructions }: { instructions: TransactionInstructionInfo[] }) {
+export function InstructionList({ instructions }: { instructions: InstructionSummary[] }) {
     const visible = instructions.slice(0, INLINE_LIMIT);
     const overflow = instructions.slice(INLINE_LIMIT);
 
     return (
-        <div className="e-mt-1 e-flex e-flex-col">
+        <div className="mt-1 flex flex-col">
             {visible.map((instruction, i) => (
                 <InstructionLine key={i} instruction={instruction} />
             ))}
@@ -18,36 +19,36 @@ export function InstructionList({ instructions }: { instructions: TransactionIns
     );
 }
 
-function InstructionLine({ instruction }: { instruction: TransactionInstructionInfo }) {
-    return (
-        <span className="e-cursor-default e-text-xs">
-            <span className="e-text-muted">{instruction.program}: </span>
-            <span className="e-text-white">{instruction.name}</span>
-        </span>
-    );
-}
-
 export function InstructionListSkeleton() {
     return (
-        <div className="e-mt-1 e-flex e-flex-col e-gap-1">
-            <Skeleton className="e-h-3.5 e-w-44" />
-            <Skeleton className="e-h-3.5 e-w-36" />
+        <div className="mt-1 flex flex-col gap-1">
+            <Skeleton className="h-3.5 w-44" />
+            <Skeleton className="h-3.5 w-36" />
         </div>
     );
 }
 
-function OverflowLine({ instructions }: { instructions: TransactionInstructionInfo[] }) {
+function InstructionLine({ instruction }: { instruction: InstructionSummary }) {
+    return (
+        <span className="cursor-default text-xs">
+            <span className="text-muted">{instruction.programName}: </span>
+            <span className="text-white">{instruction.name}</span>
+        </span>
+    );
+}
+
+function OverflowLine({ instructions }: { instructions: InstructionSummary[] }) {
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <span className="e-cursor-pointer e-text-xs e-text-muted">+{instructions.length} more</span>
+                <span className="cursor-pointer text-xs text-muted">+{instructions.length} more</span>
             </TooltipTrigger>
             <TooltipContent
                 side="bottom"
                 sideOffset={4}
-                className="e-flex e-min-w-64 e-flex-col e-gap-1.5 e-rounded-lg e-border e-border-solid e-border-outer-space-800 e-bg-outer-space-900 e-p-3 e-shadow-md"
+                className="flex min-w-64 flex-col gap-1.5 rounded-lg border border-solid border-outer-space-800 bg-outer-space-900 p-3 shadow-md"
             >
-                <span className="e-text-xs e-font-medium e-text-white">Programs</span>
+                <span className="text-xs font-medium text-white">Programs</span>
                 {instructions.map((instruction, i) => (
                     <InstructionLine key={i} instruction={instruction} />
                 ))}

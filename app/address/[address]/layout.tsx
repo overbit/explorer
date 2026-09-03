@@ -10,18 +10,30 @@ import { isNFTokenAccount, parseNFTokenCollectionAccount } from '@components/acc
 import { NFTOKEN_ADDRESS } from '@components/account/nftoken/nftoken';
 import { NFTokenAccountSection } from '@components/account/nftoken/NFTokenAccountSection';
 import { NonceAccountSection } from '@components/account/NonceAccountSection';
+import { detectSquadsAccountType, SquadsAccountSection } from '@components/account/squads/SquadsAccountSection';
 import { SysvarAccountSection } from '@components/account/SysvarAccountSection';
 import { TokenAccountSection } from '@components/account/TokenAccountSection';
 import { UnknownAccountCard } from '@components/account/UnknownAccountCard';
 import { UpgradeableLoaderAccountSection } from '@components/account/UpgradeableLoaderAccountSection';
-import { VoteAccountSection } from '@components/account/VoteAccountSection';
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { Header } from '@components/Header';
 import { useRefreshAccount } from '@entities/account';
-import { useAnchorProgram } from '@entities/idl';
+// Deliberately import from `lib/program-address`, NOT from `index`, which pulls the client and pako.
+import { isPmpAccount } from '@entities/pmp-account/lib/program-address';
+import {
+    ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL,
+    BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL,
+    CONFIG_PROGRAM_LABEL,
+    isParsedAccountProgram,
+    NONCE_PROGRAM_LABEL,
+    STAKE_PROGRAM_LABEL,
+    SYSVAR_PROGRAM_LABEL,
+    VOTE_PROGRAM_LABEL,
+} from '@explorer/parsers';
 import { SecurityNotification } from '@features/security-txt';
 import { StakeAccountSection } from '@features/stake';
+import { VoteAccountSection } from '@features/vote';
 import {
     Account,
     AccountsProvider,
@@ -40,7 +52,7 @@ import { PublicKey } from '@solana/web3.js';
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022';
 import { ClusterStatus } from '@utils/cluster';
 import { FEATURE_PROGRAM_ID } from '@utils/parseFeatureAccount';
-import { useSearchParams } from 'next/navigation';
+import { redirect, RedirectType } from 'next/navigation';
 import React, { PropsWithChildren, Suspense, use } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS as SAS_PROGRAM_ID } from 'sas-lib';
@@ -49,13 +61,22 @@ import useSWRImmutable from 'swr/immutable';
 import { CompressedNftCard } from '@/app/components/account/CompressedNftCard';
 import { ManifestAccountSection } from '@/app/components/account/manifest/ManifestAccountSection';
 import { SolanaAttestationServiceCard } from '@/app/components/account/sas/SolanaAttestationCard';
+import { getFeatureInfo, useFeatureInfo } from '@/app/entities/feature-gate';
 import { hasTokenMetadata } from '@/app/features/metadata';
+import {
+    isSubscriptionsAccount,
+    SubscriptionsAccountCard,
+    SubscriptionsEventAuthorityCard,
+    useIsEventAuthority,
+    useWalletDelegations,
+    useWalletPlans,
+} from '@/app/features/subscriptions';
 import { useCompressedNft } from '@/app/providers/compressed-nft';
 import { useSquadsMultisigLookup } from '@/app/providers/squadsMultisig';
 import { type NavigationTab, NavigationTabLink, NavigationTabs } from '@/app/shared/ui/navigation-tabs';
+import { PageContainer } from '@/app/shared/ui/page-container/PageContainer';
 import { StickyHeader } from '@/app/shared/ui/sticky-header/StickyHeader';
 import { isAttestationAccount } from '@/app/utils/attestation-service';
-import { getFeatureInfo, useFeatureInfo } from '@/app/utils/feature-gate/utils';
 import { decodeManifestAccount, isManifestProgramId } from '@/app/utils/manifest';
 import {
     fetchFullTokenInfo,
@@ -63,7 +84,9 @@ import {
     getFullTokenInfoSwrKey,
     isRedactedTokenAddress,
 } from '@/app/utils/token-info';
-import { pickClusterParams } from '@/app/utils/url';
+import { useBuildClusterPath, useClusterPath } from '@/app/utils/url';
+
+import { AccountDataTab } from './AccountDataTab';
 
 const TABS_LOOKUP: Record<string, AddressTab[]> = {
     'address-lookup-table': [{ path: 'entries', title: 'Table Entries' }],
@@ -129,7 +152,9 @@ export type AddressTabPath =
     | 'feature-gate'
     | 'token-extensions'
     | 'attestation'
-    | 'files';
+    | 'files'
+    | 'account-data'
+    | 'subscriptions';
 
 type AddressTab = NavigationTab<AddressTabPath>;
 
@@ -139,7 +164,7 @@ type InnerProps = PropsWithChildren<{ params: AddressParams }>;
 
 function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     const fetchAccount = useFetchAccountInfo();
-    const { status, cluster, url, clusterInfo } = useCluster();
+    const { status, cluster, url, genesisHash } = useCluster();
     const info = useAccountInfo(address);
 
     let pubkey: PublicKey | undefined;
@@ -156,22 +181,23 @@ function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     const shouldFetchTokenInfo =
         infoStatus === FetchStatus.Fetched && infoParsed && isTokenProgramData(infoParsed) && pubkey;
     const { data: fullTokenInfo, isLoading: isFullTokenInfoLoading } = useSWRImmutable(
-        shouldFetchTokenInfo ? getFullTokenInfoSwrKey(address, cluster, url, clusterInfo?.genesisHash) : null,
+        shouldFetchTokenInfo ? getFullTokenInfoSwrKey(address, cluster, url, genesisHash) : null,
         fetchFullTokenInfo,
     );
 
     const isAccountLoading = !info || info.status === FetchStatus.Fetching;
     const isTokenInfoLoading = isAccountLoading || isFullTokenInfoLoading;
 
-    // Fetch account on load
+    // Fetch account on load. `info` is in the deps so the fetch re-arms if the cache entry is
+    // cleared from under us (e.g. a dev-mode segment remount wiping provider state mid-fetch).
     React.useEffect(() => {
         if (!info && status === ClusterStatus.Connected && pubkey) {
             fetchAccount(pubkey, 'parsed');
         }
-    }, [address, status]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [address, status, info]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
-        <div className="container mt-n3">
+        <PageContainer variant="pulled-up">
             <Header
                 address={address}
                 account={info?.data}
@@ -191,7 +217,7 @@ function AddressLayoutInner({ children, params: { address } }: InnerProps) {
                     {children}
                 </DetailsSections>
             )}
-        </div>
+        </PageContainer>
     );
 }
 
@@ -248,6 +274,9 @@ function DetailsSections({
                 <ProgramMultisigTab authority={authority} />
             </Suspense>
             <Suspense fallback={null}>
+                <WalletSubscriptionsTab walletAddress={account.executable ? null : address} />
+            </Suspense>
+            <Suspense fallback={null}>
                 <AccountDataTab programId={account.owner} />
             </Suspense>
         </>
@@ -268,11 +297,21 @@ function DetailsSections({
 function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: FullTokenInfo }) {
     const parsedData = account.data.parsed;
     const rawData = account.data.raw;
+    const addressPath = useClusterPath({ pathname: `/address/${account.pubkey.toBase58()}` });
 
     // get feature data from featureGates.json
     const featureInfo = useFeatureInfo({ address: account.pubkey.toBase58() });
 
-    if (parsedData && parsedData.program === 'bpf-upgradeable-loader') {
+    // The Subscriptions event authority is a signer-only PDA with no account data, so it
+    // is recognised by its derived address rather than by decoding bytes.
+    const isEventAuthority = useIsEventAuthority(account.pubkey.toBase58());
+
+    // Squads v4 Batch / VaultTransaction accounts aren't RPC-parsed; detect them by
+    // discriminator so we can surface a direct "Inspect" link to the transaction inspector.
+    const squadsAccountType = rawData ? detectSquadsAccountType(account.owner, rawData) : undefined;
+
+    // TODO: adopt @explorer/entity-inspector's accounts module (src/accounts: classifyAccountKindBase + kinds.ts; needs a browser-safe ./accounts subpath) instead of this inline kind chain
+    if (isParsedAccountProgram(parsedData, BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL)) {
         return (
             <UpgradeableLoaderAccountSection
                 account={account}
@@ -280,7 +319,7 @@ function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: Ful
                 programData={parsedData.programData}
             />
         );
-    } else if (parsedData && parsedData.program === 'stake') {
+    } else if (isParsedAccountProgram(parsedData, STAKE_PROGRAM_LABEL)) {
         return (
             <StakeAccountSection
                 account={account}
@@ -293,17 +332,16 @@ function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: Ful
         return <NFTokenAccountSection account={account} />;
     } else if (parsedData && isTokenProgramData(parsedData)) {
         return <TokenAccountSection account={account} tokenAccount={parsedData.parsed} tokenInfo={tokenInfo} />;
-    } else if (parsedData && parsedData.program === 'nonce') {
+    } else if (isParsedAccountProgram(parsedData, NONCE_PROGRAM_LABEL)) {
         return <NonceAccountSection account={account} nonceAccount={parsedData.parsed} />;
-    } else if (parsedData && parsedData.program === 'vote') {
+    } else if (isParsedAccountProgram(parsedData, VOTE_PROGRAM_LABEL)) {
         return <VoteAccountSection account={account} voteAccount={parsedData.parsed} />;
-    } else if (parsedData && parsedData.program === 'sysvar') {
+    } else if (isParsedAccountProgram(parsedData, SYSVAR_PROGRAM_LABEL)) {
         return <SysvarAccountSection account={account} sysvarAccount={parsedData.parsed} />;
-    } else if (parsedData && parsedData.program === 'config') {
+    } else if (isParsedAccountProgram(parsedData, CONFIG_PROGRAM_LABEL)) {
         return <ConfigAccountSection account={account} configAccount={parsedData.parsed} />;
     } else if (
-        parsedData &&
-        parsedData.program === 'address-lookup-table' &&
+        isParsedAccountProgram(parsedData, ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL) &&
         parsedData.parsed.type === 'lookupTable'
     ) {
         return <AddressLookupTableAccountSection account={account} lookupTableAccount={parsedData.parsed.info} />;
@@ -315,6 +353,17 @@ function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: Ful
         return <FeatureAccountSection account={account} />;
     } else if (account.owner.toBase58() === SAS_PROGRAM_ID) {
         return <SolanaAttestationServiceCard account={account} />;
+    } else if (isEventAuthority) {
+        return <SubscriptionsEventAuthorityCard account={account} />;
+    } else if (isSubscriptionsAccount(account)) {
+        return (
+            <SubscriptionsAccountCard
+                account={account}
+                onNotFound={() => redirect(addressPath, RedirectType.replace)}
+            />
+        );
+    } else if (squadsAccountType) {
+        return <SquadsAccountSection account={account} accountType={squadsAccountType} />;
     } else {
         const fallback = <UnknownAccountCard account={account} />;
         return (
@@ -338,20 +387,20 @@ function MoreSection({
     tabs: AddressTab[];
     asyncChildren?: React.ReactNode;
 }) {
-    const searchParams = useSearchParams();
+    const buildClusterPath = useBuildClusterPath();
     const buildHref = React.useCallback(
-        (path: string) => pickClusterParams(`${baseUrl}/${path}`, searchParams ?? undefined),
-        [baseUrl, searchParams],
+        (path: string) => buildClusterPath(`${baseUrl}/${path}`),
+        [baseUrl, buildClusterPath],
     );
 
     return (
         <>
             <StickyHeader>
-                <div className="container">
+                <PageContainer>
                     <NavigationTabs buildHref={buildHref} tabs={tabs}>
                         {asyncChildren}
                     </NavigationTabs>
-                </div>
+                </PageContainer>
             </StickyHeader>
             {children}
         </>
@@ -427,6 +476,12 @@ function getNavigationTabs(pubkey: PublicKey, account: Account): AddressTab[] {
         tabs.push(...TABS_LOOKUP['attestation']);
     }
 
+    // account-data tab is to display decoded data of account.
+    // TODO: consider moving anchor-account tab to account-data and add support for Codama IDL accounts.
+    if (isPmpAccount(account)) {
+        tabs.push({ path: 'account-data', title: 'Account Data' });
+    }
+
     if (isRedactedTokenAddress(address)) {
         const metadataIndex = tabs.findIndex(tab => tab.path === 'metadata');
         if (metadataIndex !== -1) {
@@ -482,13 +537,19 @@ function ProgramMultisigTab({ authority }: { authority: PublicKey | null | undef
     return <NavigationTabLink path="program-multisig" title="Program Multisig" />;
 }
 
-function AccountDataTab({ programId }: { programId: PublicKey }) {
-    const { url, cluster } = useCluster();
-    const { program: accountAnchorProgram } = useAnchorProgram(programId.toString(), url, cluster);
-
-    if (!accountAnchorProgram) {
-        return null;
-    }
-
-    return <NavigationTabLink path="anchor-account" title="Anchor Data" />;
+function WalletSubscriptionsTab({ walletAddress }: { walletAddress: string | null }) {
+    // Non-suspense: this fires on every non-executable account page, so a failing RPC
+    // (e.g. getProgramAccounts disabled/rate-limited) must hide the tab, not throw and
+    // take down the whole account page. Mirrors ProgramMultisigTab's error handling.
+    const { data: delegationsData, error: delegationsError } = useWalletDelegations(walletAddress, {
+        suspense: false,
+    });
+    const { data: plansData, error: plansError } = useWalletPlans(walletAddress, { suspense: false });
+    if (delegationsError || plansError) return null;
+    const hasAny =
+        (delegationsData?.delegations.length ?? 0) > 0 ||
+        (delegationsData?.delegationsReceived.length ?? 0) > 0 ||
+        (plansData?.plans.length ?? 0) > 0;
+    if (!hasAny) return null;
+    return <NavigationTabLink path="subscriptions" title="Subscriptions" />;
 }

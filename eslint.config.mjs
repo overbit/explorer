@@ -1,23 +1,14 @@
-import { FlatCompat } from '@eslint/eslintrc';
-import js from '@eslint/js';
 import eslintComments from '@eslint-community/eslint-plugin-eslint-comments';
 import vitest from '@vitest/eslint-plugin';
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 import boundaries from 'eslint-plugin-boundaries';
 import simpleImportSort from 'eslint-plugin-simple-import-sort';
 import sortKeysFix from 'eslint-plugin-sort-keys-fix';
+import storybook from 'eslint-plugin-storybook';
 import testingLibrary from 'eslint-plugin-testing-library';
 import unicorn from 'eslint-plugin-unicorn';
 import globals from 'globals';
-import { dirname } from 'path';
 import tseslint from 'typescript-eslint';
-import { fileURLToPath } from 'url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-const compat = new FlatCompat({
-    baseDirectory: __dirname,
-    recommendedConfig: js.configs.recommended,
-});
 
 const TEST_AND_STORY_FILES = [
     '**/__tests__/**/*.[jt]s?(x)',
@@ -28,26 +19,156 @@ const TEST_AND_STORY_FILES = [
     '**/*.stories.[jt]s?(x)',
 ];
 
+// Flat config replaces `no-restricted-syntax` options wholesale, so every override must spread these
+// back in or it silently drops the RegExp ban for its own files.
+const NO_REGEXP_SELECTORS = [
+    {
+        selector: 'Literal[regex]',
+        message:
+            'RegExps are not recommended. If you sure regexp is needed - please use eslint-disable-next no-restricted-syntax -- %comment%  to explain why',
+    },
+    {
+        selector: 'RegExpLiteral',
+        message:
+            'RegExps are not recommended. If you sure regexp is needed - please use eslint-disable-next no-restricted-syntax -- %comment%  to explain why',
+    },
+];
+
+// `'use client'` turns the module into a client reference, which silently neutralises `client-only`:
+// the pair reads as guarded while a server caller still fails at runtime instead of at build time.
+const CLIENT_MARKER_CONFLICT = {
+    selector:
+        "Program:has(ExpressionStatement > Literal[value='use client']):has(ImportDeclaration[source.value='client-only'])",
+    message:
+        "Do not combine 'use client' with `import 'client-only'` — the directive makes the module a client reference, so the marker stops failing the build and a server caller degrades to a runtime error instead. Keep the directive for components; keep only the marker for hooks and plain modules.",
+};
+
+// Hooks still on `'use client'`. Per-file so any *new* hook is subject to the rule. This list only
+// ever shrinks — a PR that adds an entry is opting a new hook out of the one guard that catches a
+// server caller at build time. Removing an entry means swapping the directive for
+// `import 'client-only'` and confirming `next build` still passes; a failure names a barrel that
+// re-exports the hook onto a server path.
+const HOOKS_PENDING_CLIENT_ONLY = [
+    'app/entities/account/model/use-account-query.ts',
+    'app/entities/cluster/model/use-cluster-connection-failed.ts',
+    'app/entities/cluster/model/use-cluster-info.ts',
+    'app/entities/cluster/model/use-cluster-modal.ts',
+    'app/entities/cluster/model/use-cluster-resource-search.ts',
+    'app/entities/cluster/model/use-cluster-url.ts',
+    'app/entities/cluster/model/use-cluster.ts',
+    'app/entities/cluster/model/use-solana-rpc.ts',
+    'app/entities/domain/model/use-user-ans-domains.ts',
+    'app/entities/domain/model/use-user-sns-domains.ts',
+    'app/entities/idl/model/anchor/use-anchor-program.ts',
+    'app/entities/idl/model/anchor/use-format-anchor-idl.ts',
+    'app/entities/idl/model/use-format-codama-idl.ts',
+    'app/entities/idl/model/use-program-idl-names.ts',
+    'app/entities/idl/model/use-program-idls.ts',
+    'app/entities/nft/model/use-token-metadata.ts',
+    'app/entities/program-metadata/model/use-program-metadata-idl.tsx',
+    'app/entities/slot-time/model/use-slot-time.ts',
+    'app/entities/token-info/model/use-token-info.ts',
+    'app/entities/transaction-data/model/use-resolved-instruction-names.ts',
+    'app/features/cluster-switcher/model/use-cluster-href.ts',
+    'app/features/cluster-switcher/model/use-custom-url-draft.ts',
+    'app/features/cookie/model/use-analytics-consent.ts',
+    'app/features/decode-account-pmp/model/use-decode-buffer-payload.ts',
+    'app/features/decode-account-pmp/model/use-decode-metadata-payload.ts',
+    'app/features/decode-account-pmp/model/use-resolve-buffer-config-from-bytes.ts',
+    'app/features/decode-account-pmp/model/use-resolve-buffer-config-onchain.ts',
+    'app/features/idl/interactive-idl/model/transaction/use-execute-transaction.ts',
+    'app/features/idl/interactive-idl/model/transaction/use-simulate-transaction.ts',
+    'app/features/idl/interactive-idl/model/use-instruction.ts',
+    'app/features/idl/model/use-tabs.tsx',
+    'app/features/instruction-simulation/model/use-simulation.ts',
+    'app/features/nicknames/model/use-nickname.ts',
+    'app/features/receipt/lib/use-primary-domain.ts',
+    'app/features/stake/model/use-total-reward.ts',
+    'app/features/supply/model/use-supply.ts',
+    'app/features/token-batch/model/use-sub-instruction-mint-info.ts',
+    'app/features/transaction-history/model/use-account-history.ts',
+    'app/features/transaction-history/model/use-fetch-account-history.ts',
+    'app/features/transaction/model/use-cluster-transaction-search.ts',
+    'app/providers/wallet/use-logged-wallet-error.ts',
+    'app/providers/wallet/use-wallet.ts',
+    'app/shared/lib/use-auto-refresh.ts',
+    'app/shared/lib/use-breakpoint.ts',
+    'app/shared/lib/use-can-native-share.ts',
+    'app/shared/lib/use-hydrated.ts',
+    'app/shared/lib/use-reduced-motion.ts',
+];
+
+// A hook is never a component, so it never needs to *be* a client boundary — and `'use client'` costs
+// it the only build-time guard available: a server caller of a directive-carrying module gets a
+// client reference and fails at runtime, while `client-only` fails `next build` with an import trace.
+const clientBoundaryPlugin = {
+    rules: {
+        'prefer-client-only-in-hooks': {
+            create(context) {
+                return {
+                    Program(node) {
+                        for (const statement of node.body) {
+                            // Directives only count in the leading prologue, so stop at the first real statement.
+                            if (statement.type !== 'ExpressionStatement' || statement.expression.type !== 'Literal') {
+                                return;
+                            }
+                            if (statement.expression.value !== 'use client') continue;
+                            context.report({
+                                messageId: 'preferClientOnly',
+                                node: statement,
+                            });
+                            return;
+                        }
+                    },
+                };
+            },
+            meta: {
+                docs: { description: "Suggest `import 'client-only'` over 'use client' for hook modules." },
+                messages: {
+                    preferClientOnly:
+                        "Prefer `import 'client-only'` over 'use client' in a hook module: a server caller then fails `next build` with an import trace instead of throwing at runtime. Verify with a build — a failure means something in the server graph reaches this module, usually a barrel re-export worth splitting.",
+                },
+                schema: [],
+                type: 'suggestion',
+            },
+        },
+    },
+};
+
 export default tseslint.config(
-    // Global ignores
+    // Global ignores.
+    // packages/* are intentionally not ignored: root `eslint .` (like prettier's `**/*.ts` glob) lints their source with this shared config — only built output is excluded.
+    // Exception: packages/idl-decode, packages/entity-inspector and packages/parsers lint themselves with oxlint (see their .oxlintrc.json), wired into root `pnpm lint`.
     {
         ignores: [
-            'dist/**',
+            '**/dist/**',
+            'packages/idl-decode/**',
             'lib/**',
             '.next/**',
             '.next-dev/**',
             'node_modules/**',
+            '**/coverage/**',
+            'playwright-report/**',
+            'test-results/**',
             '.claude/**',
             '.worktrees/**',
+            'packages/entity-inspector/**',
+            'packages/parsers/**',
+            'storybook-static/**',
+            'storybook-static-*/**',
+            'public/mockServiceWorker.js',
             'next-env.d.ts',
         ],
     },
 
-    // Next.js config via compat (still legacy format in v15)
-    ...compat.extends('next/core-web-vitals'),
+    // Next.js flat config (eslint-config-next v16 ships native flat config)
+    ...nextCoreWebVitals,
 
-    // Base configs (after compat so tseslint parser takes precedence)
+    // Base configs (after nextCoreWebVitals so tseslint parser takes precedence)
     ...tseslint.configs.recommended,
+
+    // Storybook story-lint rules; self-scoped to story files + .storybook presets.
+    ...storybook.configs['flat/recommended'],
 
     // Main config
     {
@@ -96,19 +217,7 @@ export default tseslint.config(
             'no-unused-vars': 'off',
             'simple-import-sort/imports': 'error',
             'no-restricted-globals': ['error', 'RegExp'],
-            'no-restricted-syntax': [
-                'error',
-                {
-                    selector: 'Literal[regex]',
-                    message:
-                        'RegExps are not recommended. If you sure regexp is needed - please use eslint-disable-next no-restricted-syntax -- %comment%  to explain why',
-                },
-                {
-                    selector: 'RegExpLiteral',
-                    message:
-                        'RegExps are not recommended. If you sure regexp is needed - please use eslint-disable-next no-restricted-syntax -- %comment%  to explain why',
-                },
-            ],
+            'no-restricted-syntax': ['error', ...NO_REGEXP_SELECTORS, CLIENT_MARKER_CONFLICT],
             'sort-keys-fix/sort-keys-fix': 'error',
             '@eslint-community/eslint-comments/no-unlimited-disable': 'error',
             'no-console': 'error',
@@ -123,6 +232,36 @@ export default tseslint.config(
         files: ['**/*.cjs', '**/*.js'],
         rules: {
             '@typescript-eslint/no-require-imports': 'off',
+        },
+    },
+
+    // `eslint-config-next` v16 scopes its `import` plugin to {js,jsx,mjs,ts,tsx,mts,cts}, not `.cjs`.
+    // `.cjs` files are CommonJS (module.exports), so `import/no-default-export` doesn't apply — turn it
+    // off there so the rule isn't referenced for files where the `import` plugin isn't registered.
+    {
+        files: ['**/*.cjs'],
+        rules: {
+            'import/no-default-export': 'off',
+        },
+    },
+
+    // TODO: react-hooks rollout (introduced by the Next.js 16 upgrade). `eslint-config-next` v16
+    // bundles `eslint-plugin-react-hooks` with the React Compiler-era rules below, which flag 225
+    // pre-existing findings across the codebase. They are disabled here so the version bump stays
+    // green and self-contained; re-enable and fix them incrementally (counts at time of upgrade):
+    //   react-hooks/error-boundaries (143), react-hooks/refs (47), react-hooks/set-state-in-effect (26),
+    //   react-hooks/purity (3), react-hooks/static-components (3),
+    //   react-hooks/preserve-manual-memoization (2), react-hooks/immutability (1).
+    {
+        files: ['**/*.[jt]s?(x)'],
+        rules: {
+            'react-hooks/error-boundaries': 'off',
+            'react-hooks/immutability': 'off',
+            'react-hooks/preserve-manual-memoization': 'off',
+            'react-hooks/purity': 'off',
+            'react-hooks/refs': 'off',
+            'react-hooks/set-state-in-effect': 'off',
+            'react-hooks/static-components': 'off',
         },
     },
 
@@ -178,9 +317,15 @@ export default tseslint.config(
         },
     },
 
-    // Allow console in logger, scripts, standalone files, pnpmfile
+    // Allow console in logger, scripts, standalone files
     {
-        files: ['app/shared/lib/logger.ts', 'scripts/**', '**/*.mjs', '**/*.cjs'],
+        files: [
+            'app/shared/lib/logger.ts',
+            'packages/entity-inspector/src/logger.ts',
+            'scripts/**',
+            '**/*.mjs',
+            '**/*.cjs',
+        ],
         rules: {
             'no-console': 'off',
         },
@@ -188,7 +333,15 @@ export default tseslint.config(
 
     // Relax sort-keys in config/tooling files (not linted by next lint before)
     {
-        files: ['*.config.*', '**/*.mjs', '**/*.cjs', '.storybook/**', 'scripts/**', '.prettierrc.cjs'],
+        files: [
+            '*.config.*',
+            '**/*.mjs',
+            '**/*.cjs',
+            '.storybook/**',
+            'storybook-design/.storybook/**',
+            'scripts/**',
+            '.prettierrc.cjs',
+        ],
         rules: {
             'sort-keys-fix/sort-keys-fix': 'off',
         },
@@ -200,10 +353,7 @@ export default tseslint.config(
     {
         files: [
             // app/components (pre-FSD legacy)
-            'app/components/ClusterModalDeveloperSettings.tsx',
             'app/components/account/token-extensions/ScaledUiAmountMultiplierTooltip.tsx',
-            'app/components/common/token-market-data/stories/MarketData.s.tsx',
-            'app/components/common/token-market-data/stories/MarketDataSeries.s.tsx',
             'app/components/instruction/AnchorDetailsCard.tsx',
             'app/components/instruction/pyth/AddMappingDetailsCard.tsx',
             'app/components/instruction/pyth/AddPriceDetailsCard.tsx',
@@ -257,17 +407,19 @@ export default tseslint.config(
 
             // Next.js root files
             'next.config.*',
+            'empty.ts', // Turbopack `resolveAlias` stub for Node built-ins (see next.config.mjs)
             'instrumentation.ts',
             'instrumentation-client.ts',
-            'middleware.ts',
+            'proxy.ts',
             'sentry.*.config.ts',
 
             // Storybook
             '.storybook/**',
+            'storybook-design/.storybook/**',
             '**/*.stories.[jt]s?(x)',
 
-            // Generic config files
-            '*.config.{ts,mts,js,mjs,cjs}',
+            // Generic config files (including nested ones, e.g. packages/*/vitest.config.ts)
+            '**/*.config.{ts,mts,js,mjs,cjs}',
         ],
         rules: {
             'import/no-default-export': 'off',
@@ -281,14 +433,20 @@ export default tseslint.config(
         plugins: { boundaries },
         settings: {
             'boundaries/elements': [
+                // Route handlers only. Pages are excluded on purpose: a server page may import a
+                // client component to render it, which is the intended RSC pattern, while a handler
+                // renders nothing and only ever calls what it imports.
+                { type: 'route', pattern: 'app/**/route.[jt]s?(x)', mode: 'file' },
                 { type: 'feature', pattern: 'app/features/*', mode: 'folder', capture: ['name'] },
-                { type: 'entity', pattern: 'app/entities/*', mode: 'folder', capture: ['name'] },
+                // Must precede the broader `entity` pattern — element types are matched in
+                // declaration order, so `@x` folders would otherwise be classified as `entity`.
                 {
                     type: 'entity-public-api',
                     pattern: 'app/entities/*/@x/*',
                     mode: 'folder',
                     capture: ['name', 'crossSlice'],
                 },
+                { type: 'entity', pattern: 'app/entities/*', mode: 'folder', capture: ['name'] },
                 { type: 'shared', pattern: 'app/shared', mode: 'folder' },
             ],
         },
@@ -299,11 +457,29 @@ export default tseslint.config(
                     default: 'disallow',
                     rules: [
                         {
+                            // Only through `server.ts` — that barrel exists to declare what a slice
+                            // offers the server. `index.ts` is server-safe only by accident: add one
+                            // client export to it later and a client boundary lands on a server call
+                            // path silently. A deep path into `api/` or `lib/` drags in whatever that
+                            // module happens to import, with the same result.
+                            from: { type: 'route' },
+                            allow: {
+                                to: [
+                                    { type: 'shared' },
+                                    { type: 'entity', internalPath: 'server.ts' },
+                                    { type: 'feature', internalPath: 'server.ts' },
+                                ],
+                            },
+                        },
+                        {
                             from: { type: 'feature' },
                             allow: {
                                 to: [
                                     { type: 'shared' },
                                     { type: 'entity', internalPath: 'index.ts' },
+                                    // Hooks an entity keeps off `index.ts` so that barrel stays callable
+                                    // from a route handler; the `client-only` marker on it catches misuse.
+                                    { type: 'entity', internalPath: 'client.ts' },
                                     { type: 'entity-public-api' },
                                     { type: 'feature', captured: { name: '{{ name }}' } },
                                 ],
@@ -320,12 +496,82 @@ export default tseslint.config(
                             },
                         },
                         {
+                            // `@x` re-export files reach back into their own entity's internals.
+                            from: { type: 'entity-public-api' },
+                            allow: {
+                                to: [{ type: 'shared' }, { type: 'entity', captured: { name: '{{ name }}' } }],
+                            },
+                        },
+                        {
                             from: { type: 'shared' },
                             allow: {
                                 to: { type: 'shared' },
                             },
                         },
                     ],
+                },
+            ],
+        },
+    },
+
+    // Allow cross-boundary imports in tests and Storybook stories.
+    {
+        files: TEST_AND_STORY_FILES,
+        rules: {
+            'boundaries/dependencies': 'off',
+        },
+    },
+
+    // A slice's data-access layer is shared by both graphs: route handlers call it on the server,
+    // components call it in the browser. `'use client'` here compiles fine and then throws
+    // "is on the client" the first time a server caller invokes it. Put the boundary on the hook or
+    // component that consumes the module instead.
+    {
+        files: [
+            'app/entities/*/api/**/*.[jt]s?(x)',
+            'app/entities/*/@x/**/*.[jt]s?(x)',
+            'app/features/*/api/**/*.[jt]s?(x)',
+        ],
+        ignores: TEST_AND_STORY_FILES,
+        rules: {
+            'no-restricted-syntax': [
+                'error',
+                ...NO_REGEXP_SELECTORS,
+                CLIENT_MARKER_CONFLICT,
+                {
+                    selector: "ExpressionStatement > Literal[value='use client']",
+                    message:
+                        "Do not mark a slice's api/ or @x/ module 'use client' — server code imports it, and the directive turns those calls into a client-reference error at runtime. Move the boundary to the consuming hook or component.",
+                },
+            ],
+        },
+    },
+
+    // Deliberately its own rule name: configuring `no-restricted-syntax` here would replace the
+    // error-level selectors for these files and silently downgrade them.
+    {
+        files: ['app/**/use-*.[jt]s?(x)'],
+        ignores: [...TEST_AND_STORY_FILES, ...HOOKS_PENDING_CLIENT_ONLY],
+        plugins: { boundary: clientBoundaryPlugin },
+        rules: {
+            'boundary/prefer-client-only-in-hooks': 'error',
+        },
+    },
+
+    // A `server.ts` barrel declares which exports are for server consumers; without the marker that
+    // declaration is unenforced, and a client importer is only found at runtime. Universal code stays
+    // reachable through the slice's `index.ts`.
+    {
+        files: ['app/**/server.[jt]s?(x)'],
+        rules: {
+            'no-restricted-syntax': [
+                'error',
+                ...NO_REGEXP_SELECTORS,
+                CLIENT_MARKER_CONFLICT,
+                {
+                    selector: "Program:not(:has(ImportDeclaration[source.value='server-only']))",
+                    message:
+                        "A `server.ts` barrel must `import 'server-only'` so a client importer fails `next build` instead of at runtime.",
                 },
             ],
         },
@@ -340,25 +586,22 @@ export default tseslint.config(
         files: [
             // app/entities cross-entity / wrong-direction imports
             'app/entities/nft/lib/get-metadata-json.ts',
-            'app/entities/program-metadata/model/useProgramMetadataCodamaIdl.tsx',
-            'app/entities/token-info/index.ts',
-            'app/entities/token-info/lib/fetch-token-mints.ts',
-            'app/entities/token-info/lib/is-valid-cluster.ts',
 
             // app/features cross-feature imports
-            'app/features/idl/interactive-idl/model/__tests__/use-mainnet-confirmation.spec.ts',
             'app/features/idl/interactive-idl/model/use-mainnet-confirmation.ts',
+            'app/features/instruction-simulation/ui/SimulationCard.tsx',
             'app/features/receipt/receipt-page.tsx',
             'app/features/search/api/discover-with-utl.ts',
             'app/features/search/api/resolve-search-tokens.ts',
             'app/features/stake/ui/StakeAccountSection.tsx',
+            'app/features/transaction/ui/AccountDetailSlideover.tsx',
+            'app/features/transaction/ui/AccountExpandedSections.tsx',
+            'app/features/transaction/ui/InstructionsSection.tsx',
+            'app/features/transaction/ui/SummaryCard.tsx',
+            'app/features/vote/ui/VoteAccountSection.tsx',
 
             // app/features deep imports into entities (must go via barrel)
-            'app/features/idl/formatted-idl/model/__tests__/search.test.ts',
-            'app/features/idl/formatted-idl/ui/stories/AnchorFormattedIdl.stories.tsx',
-            'app/features/idl/formatted-idl/ui/stories/CodamaFormattedIdl.stories.tsx',
             'app/features/idl/interactive-idl/model/codama/codama-interpreter.ts',
-            'app/features/idl/model/use-idl-last-transaction-date.tsx',
 
             // app/shared reverse-layer imports
             'app/shared/components/DownloadDropdown.tsx',
@@ -476,7 +719,6 @@ export default tseslint.config(
             // app root & route pages (pre-FSD)
             'app/@analytics/default.js',
             'app/layout.tsx',
-            'app/page.tsx',
             'app/address/[[]address[]]/layout.tsx',
             'app/block/[[]slot[]]/accounts/page-client.tsx',
             'app/block/[[]slot[]]/page-client.tsx',
@@ -485,19 +727,14 @@ export default tseslint.config(
             'app/tx/[[]signature[]]/page-client.tsx',
 
             // app/api (Next route handlers)
-            'app/api/anchor/route.ts',
             'app/api/domain-info/[[]domain[]]/route.ts',
             'app/api/metadata/proxy/route.ts',
-            'app/api/program-metadata-idl/route.ts',
-            'app/api/receipt/price/[[]mintAddress[]]/route.ts',
+            'app/api/token-price/[[]mintAddress[]]/route.ts',
             'app/api/search/route.ts',
 
             // app/components (pre-FSD legacy — to be migrated into features/entities)
-            'app/components/ClusterModal.tsx',
-            'app/components/ClusterModalDeveloperSettings.tsx',
             'app/components/LiveTransactionStatsCard.tsx',
             'app/components/MessageBanner.tsx',
-            'app/components/TopAccountsCard.tsx',
             'app/components/account/AnchorAccountCard.tsx',
             'app/components/account/CompressedNftCard.tsx',
             'app/components/account/FeatureAccountSection.tsx',
@@ -505,11 +742,9 @@ export default tseslint.config(
             'app/components/account/OwnedTokensCard.tsx',
             'app/components/account/ProgramMultisigCard.tsx',
             'app/components/account/RewardsCard.tsx',
-            'app/components/account/StakeAccountSection.tsx',
             'app/components/account/TokenAccountSection.tsx',
             'app/components/account/TokenExtensionsSection.tsx',
             'app/components/account/TokenHistoryCard.tsx',
-            'app/components/account/UnknownAccountCard.tsx',
             'app/components/account/UpgradeableLoaderAccountSection.tsx',
             'app/components/account/VerifiedBuildCard.tsx',
             'app/components/account/history/TokenInstructionsCard.tsx',
@@ -533,32 +768,20 @@ export default tseslint.config(
             'app/components/inspector/AddressTableLookupsCard.tsx',
             'app/components/inspector/AddressWithContext.tsx',
             'app/components/inspector/InstructionsSection.tsx',
-            'app/components/inspector/instruction-parsers/spl-token.parser.ts',
-            'app/components/inspector/instruction-parsers/system-program.parser.ts',
-            'app/components/inspector/instruction-parsers/token-2022-program.parser.ts',
             'app/components/instruction/AnchorDetailsCard.tsx',
             'app/components/instruction/ProgramEventsCard.tsx',
             'app/components/instruction/codama/CodamaInstructionDetailsCard.tsx',
             'app/components/instruction/codama/codamaUtils.tsx',
             'app/components/instruction/ed25519/Ed25519DetailsCard.tsx',
-            'app/components/instruction/mango/ChangePerpMarketParamsDetailsCard.tsx',
-            'app/components/instruction/mango/PlacePerpOrder2DetailsCard.tsx',
-            'app/components/instruction/mango/PlacePerpOrderDetailsCard.tsx',
-            'app/components/instruction/mango/PlaceSpotOrderDetailsCard.tsx',
             'app/components/instruction/program-metadata-idl/ProgramMetadataIdlInstructionDetailsCard.tsx',
             'app/components/instruction/pyth/UpdateProductDetailsCard.tsx',
             'app/components/instruction/token/TokenDetailsCard.tsx',
             'app/components/shared/StatusBadge.tsx',
             'app/components/shared/account/ProgramHeader.tsx',
             'app/components/shared/ui/autocomplete.tsx',
-            'app/components/transaction/AccountsCard.tsx',
-            'app/components/transaction/ProgramLogSection.tsx',
-            'app/components/transaction/TokenBalancesCard.tsx',
 
             // app/providers (pre-FSD legacy)
-            'app/providers/accounts/history.tsx',
             'app/providers/accounts/rewards.tsx',
-            'app/providers/accounts/utils/stake.ts',
             'app/providers/compressed-nft.tsx',
             'app/providers/epoch.tsx',
             'app/providers/squadsMultisig.tsx',
@@ -571,7 +794,6 @@ export default tseslint.config(
             'app/utils/anchor.tsx',
             'app/utils/attestation-service.tsx',
             'app/utils/cluster.ts',
-            'app/utils/feature-gate/UpcomingFeatures.tsx',
             'app/utils/get-readable-title-from-address.ts',
             'app/utils/parseFeatureAccount.ts',
             'app/utils/program-logs.ts',
@@ -579,7 +801,6 @@ export default tseslint.config(
             'app/utils/verified-builds.tsx',
 
             // app/shared (FSD shared)
-            'app/shared/lib/http-utils.ts',
             'app/shared/lib/triggerDownload.ts',
             'app/shared/lib/visibility.tsx',
             'app/shared/ui/navigation-tabs/ui/NavigationTabLink.tsx',
@@ -587,32 +808,28 @@ export default tseslint.config(
             // app/entities (FSD entities)
             'app/entities/account/model/use-accounts-info.ts',
             'app/entities/compute-unit/lib/compute-units-schedule.ts',
-            'app/entities/compute-unit/ui/CUProfilingCard.tsx',
             'app/entities/digital-asset/api.ts',
             'app/entities/domain/api/fetch-ans-domains.ts',
             'app/entities/domain/api/resolve-domain.ts',
             'app/entities/domain/model/use-user-ans-domains.ts',
             'app/entities/domain/model/use-user-sns-domains.ts',
             'app/entities/domain/ui/BaseDomainsCard.tsx',
+            'app/entities/idl/model/anchor/use-anchor-program.ts',
+            'app/entities/idl/model/anchor/use-format-anchor-idl.ts',
             'app/entities/idl/model/converters/type-handlers/tuple-type-handlers.ts',
             'app/entities/idl/model/idl-version.ts',
-            'app/entities/idl/model/use-anchor-program.ts',
-            'app/entities/idl/model/use-format-anchor-idl.ts',
             'app/entities/idl/model/use-format-codama-idl.ts',
-            'app/entities/idl/model/use-idl-from-anchor-program-seed.ts',
             'app/entities/nft/lib/is-metaplex-nft.ts',
-            'app/entities/program-metadata/api/getProgramCanonicalMetadata.ts',
-            'app/entities/program-metadata/model/useProgramCanonicalMetadata.tsx',
             'app/entities/token-info/model/token-info-batch-provider.tsx',
             'app/entities/token-info/model/use-token-info.ts',
+            'app/entities/token-price/lib/parse-usd.ts',
+            'app/entities/token-price/model/use-token-price.ts',
 
             // app/features (FSD features)
             'app/features/account/ui/AccountDownloadDropdown.tsx',
             'app/features/cookie/lib/cookie.ts',
             'app/features/cookie/model/use-analytics-consent.ts',
             'app/features/cookie/ui/CookieConsent.tsx',
-            'app/features/cu-profiling/ui/CUProfilingSection.tsx',
-            'app/features/custom-cluster/lib/cluster-storage.ts',
             'app/features/idl/formatted-idl/model/search.ts',
             'app/features/idl/formatted-idl/ui/BaseFormattedIdl.tsx',
             'app/features/idl/formatted-idl/ui/BaseIdlAccounts.tsx',
@@ -636,24 +853,19 @@ export default tseslint.config(
             'app/features/idl/interactive-idl/model/pda-generator/registry.ts',
             'app/features/idl/interactive-idl/model/pda-generator/seed-builder.ts',
             'app/features/idl/interactive-idl/model/state-atoms.ts',
-            'app/features/idl/interactive-idl/model/use-instruction.ts',
             'app/features/idl/interactive-idl/model/use-mainnet-confirmation.ts',
             'app/features/idl/interactive-idl/ui/ArgumentInput.tsx',
             'app/features/idl/interactive-idl/ui/BaseConnectWalletButton.tsx',
-            'app/features/idl/interactive-idl/ui/InstructionActivity.tsx',
             'app/features/idl/interactive-idl/ui/InteractWithIdl.tsx',
-            'app/features/idl/model/use-idl-last-transaction-date.tsx',
             'app/features/idl/ui/IdlRenderer.tsx',
             'app/features/idl/ui/IdlSection.tsx',
             'app/features/metadata/mocks.ts',
             'app/features/metadata/model/useOffChainMetadata.ts',
-            'app/features/mpl-token-metadata/lib/metaplex-token-metadata.parser.ts',
             'app/features/mpl-token-metadata/ui/MetaplexTokenMetadataDetailsCard.tsx',
             'app/features/nicknames/lib/nicknames.ts',
             'app/features/nicknames/model/use-nickname.ts',
             'app/features/receipt/__e2e__/receipt.e2e.ts',
             'app/features/receipt/lib/generate-receipt-csv.ts',
-            'app/features/receipt/lib/parse-usd.ts',
             'app/features/receipt/lib/use-primary-domain.ts',
             'app/features/receipt/mocks/custom-fee-payer.ts',
             'app/features/receipt/mocks/jito-only-transfer.ts',
@@ -670,7 +882,6 @@ export default tseslint.config(
             'app/features/receipt/mocks/usdc-multisig-transfer.ts',
             'app/features/receipt/mocks/usdc-regular-transfer.ts',
             'app/features/receipt/mocks/zero-transfer.ts',
-            'app/features/receipt/model/use-price.ts',
             'app/features/receipt/receipt-page.tsx',
             'app/features/receipt/ui/BaseReceiptImage.tsx',
             'app/features/receipt/ui/ViewReceiptButton.tsx',
@@ -684,12 +895,13 @@ export default tseslint.config(
             'app/features/stake/lib/stake-activation-math.ts',
             'app/features/stake/ui/StakeAccountSection.tsx',
             'app/features/token-verification-badge/model/use-bluprynt.ts',
-            'app/features/token-verification-badge/model/use-coingecko.ts',
             'app/features/token-verification-badge/model/use-jupiter.ts',
             'app/features/token-verification-badge/model/use-rugcheck.ts',
             'app/features/token-verification-badge/ui/VerificationIcon.tsx',
-            'app/features/transaction-history/lib/use-instruction-names.ts',
             'app/features/transaction-history/ui/TransactionHistoryCard.tsx',
+            'app/features/transaction/ui/AccountsCard.tsx',
+            'app/features/transaction/ui/ProgramLogSection.tsx',
+            'app/features/transaction/ui/TokenBalancesCard.tsx',
         ],
         rules: {
             'unicorn/no-null': 'off',
@@ -724,22 +936,17 @@ export default tseslint.config(
             'app/components/common/BaseInstructionCard.tsx',
             'app/components/common/InspectorInstructionCard.tsx',
             'app/components/inspector/InstructionsSection.tsx',
-            'app/components/inspector/instruction-parsers/token-2022-program.parser.ts',
-            'app/components/inspector/into-parsed-data.ts',
             'app/components/instruction/AnchorDetailsCard.tsx',
             'app/components/instruction/ProgramEventsCard.tsx',
             'app/components/instruction/bpf-upgradeable-loader/BpfUpgradeableLoaderDetailsCard.tsx',
             'app/components/instruction/codama/codamaUtils.tsx',
-            'app/components/instruction/lighthouse/LighthouseDetailsCard.tsx',
             'app/components/instruction/program-metadata-idl/ProgramMetadataIdlInstructionDetailsCard.tsx',
             'app/components/instruction/pyth/program.ts',
             'app/components/instruction/sas/SolanaAttestationDetailsCard.tsx',
             'app/components/instruction/token/TokenDetailsCard.tsx',
-            'app/components/instruction/vote/VoteDetailsCard.tsx',
 
             // app/providers (pre-FSD legacy)
             'app/providers/accounts/index.tsx',
-            'app/providers/accounts/utils/stake.ts',
             'app/providers/squadsMultisig.tsx',
 
             // app/utils (pre-FSD legacy)
@@ -751,12 +958,12 @@ export default tseslint.config(
 
             // app/entities (FSD entities)
             'app/entities/idl/lib/utils.ts',
+            'app/entities/idl/model/anchor/use-format-anchor-idl.ts',
             'app/entities/idl/model/converters/convert-display-idl.ts',
             'app/entities/idl/model/converters/convert-legacy-idl.ts',
             'app/entities/idl/model/converters/type-handlers/leaf-tuple-type-handler.ts',
             'app/entities/idl/model/formatters/format.ts',
             'app/entities/idl/model/formatters/formatted-idl.d.ts',
-            'app/entities/idl/model/use-format-anchor-idl.ts',
             'app/entities/nft/lib/get-metadata-json.ts',
 
             // app/features (FSD features)
@@ -764,13 +971,32 @@ export default tseslint.config(
             'app/features/idl/interactive-idl/model/anchor/anchor-program.ts',
             'app/features/idl/interactive-idl/model/anchor/array-parser.ts',
             'app/features/idl/interactive-idl/model/unified-program.d.ts',
-            'app/features/idl/interactive-idl/model/use-instruction.ts',
             'app/features/security-txt/ui/PmpSecurityTxtTable.tsx',
             'app/features/security-txt/ui/SecurityCard.tsx',
             'app/features/security-txt/ui/common.tsx',
         ],
         rules: {
             '@typescript-eslint/no-explicit-any': 'off',
+        },
+    },
+
+    // A vi.mock factory in the specs setup file must be self-contained: it runs while `@solana/kit` is
+    // still resolving, so dynamically importing app code from inside one makes the factory wait on a
+    // module that is waiting on the factory, and the whole specs project deadlocks with no error and no
+    // timeout. Static imports are fine — they finish before any factory runs.
+    {
+        files: ['test-setup.specs.ts'],
+        rules: {
+            'no-restricted-syntax': [
+                'error',
+                ...NO_REGEXP_SELECTORS,
+                CLIENT_MARKER_CONFLICT,
+                {
+                    selector: 'ImportExpression',
+                    message:
+                        'Do not use dynamic import() in this file. A vi.mock factory that imports app code deadlocks the specs project with no error and no timeout. Import statically at the top of the file instead.',
+                },
+            ],
         },
     },
 );

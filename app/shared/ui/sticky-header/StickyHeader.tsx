@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { cn } from '@/app/components/shared/utils';
+
+import { useStickyHeaderHeight } from './useStickyHeaderHeight';
 
 type Props = {
     children: React.ReactNode;
@@ -10,8 +12,9 @@ type Props = {
 };
 
 export function StickyHeader({ children, className }: Props) {
-    const sentinelRef = React.useRef<HTMLDivElement>(null);
-    const [isStuck, setIsStuck] = React.useState(false);
+    const sentinelRef = useRef<HTMLDivElement>(null);
+    const headerRef = useRef<HTMLDivElement>(null);
+    const [isStuck, setIsStuck] = useState(false);
 
     useEffect(() => {
         const sentinel = sentinelRef.current;
@@ -25,17 +28,20 @@ export function StickyHeader({ children, className }: Props) {
         return () => observer.disconnect();
     }, []);
 
+    useStickyHeaderHeight(headerRef);
+
     return (
         <>
             <div ref={sentinelRef} aria-hidden="true" />
             <div
+                ref={headerRef}
                 className={cn(
-                    'e-sticky e-top-0 e-z-10 e-mb-8 e-border-0 e-border-b e-border-solid e-border-neutral-800 e-bg-heavy-metal-900',
+                    'sticky top-0 z-10 mb-8 border-0 border-b border-solid border-neutral-800 bg-heavy-metal-900',
                     className,
                 )}
                 style={isStuck ? { marginLeft: 'calc(50% - 50vw)', width: '100vw' } : undefined}
             >
-                <div className={cn(!isStuck && '-e-mx-3')}>{children}</div>
+                <div className={cn(!isStuck && '-mx-3')}>{children}</div>
             </div>
         </>
     );

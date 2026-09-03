@@ -1,2 +1,3 @@
-export { getMetadataEndpointUrl } from './api/getMetadataEndpointUrl';
-export { errors, getProgramCanonicalMetadata } from './api/getProgramCanonicalMetadata';
+import 'server-only';
+
+export { errors } from './api/constants';

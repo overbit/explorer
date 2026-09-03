@@ -1,6 +1,8 @@
 import type { Config } from 'tailwindcss';
+import plugin from 'tailwindcss/plugin';
+import tailwindcssAnimate from 'tailwindcss-animate';
 
-const breakpoints = new Map([
+export const breakpoints = new Map([
     ['xxs', 320],
     ['xs', 375],
     ['sm', 576],
@@ -18,32 +20,32 @@ const breakpoints = new Map([
 // When a real light theme lands, rename these to their light-theme equivalents (e.g. `gray-100` →
 // `light-gray-100` or move under a `light` namespace) and drop this note.
 const dkSpacer = '1.5rem';
-const dkColors = {
+export const dkColors = {
     white: '#ffffff',
-    black: '#232323',
-    'black-dark': '#141816',
-    'gray-100': '#f9fdfc', // light — unused at runtime; rename when light theme lands
-    'gray-200': '#f1f8f6', // light — unused at runtime
-    'gray-300': '#e5ebe9', // light — unused at runtime
-    'gray-400': '#c6e6de', // light — unused at runtime
-    'gray-500': '#abd5c6', // light — unused at runtime
-    'gray-600': '#86b8b6', // shared light+dark (solana keeps this value in dark)
-    'gray-700': '#698582', // light — unused at runtime
-    'gray-800': '#387462', // light — unused at runtime
-    'gray-900': '#1b4e3f', // light — unused at runtime
-    'gray-600-dark': '#343a37',
-    'gray-700-dark': '#282d2b',
-    'gray-800-dark': '#1e2423',
+    black: '#000000',
+    'black-dark': '#000000',
+    'gray-100': '#f5f5f5', // light — unused at runtime; rename when light theme lands
+    'gray-200': '#e5e5e5', // light — unused at runtime
+    'gray-300': '#d4d4d4', // light — unused at runtime
+    'gray-400': '#a3a3a3', // light — unused at runtime
+    'gray-500': '#737373', // light — unused at runtime
+    'gray-600': '#808080', // shared light+dark
+    'gray-700': '#404040', // light — unused at runtime
+    'gray-800': '#262626', // light — unused at runtime
+    'gray-900': '#171717', // light — unused at runtime
+    'gray-600-dark': '#1a1a1a',
+    'gray-700-dark': '#111111',
+    'gray-800-dark': '#0a0a0a',
     'gray-900-dark': '#132a46', // used for $table-striped-bg, $pagination-hover-bg, $list-group-hover-bg, $lighter
-    primary: '#42ba96', // light — unused at runtime; dark uses `primary-on-dark`
-    'primary-dark': '#33a382', // active/link color (both themes)
-    'primary-on-dark': '#1dd79b',
-    success: '#19be56', // light — unused at runtime; dark uses `success-on-dark`
-    'success-on-dark': '#26e97e',
-    info: '#43b5c5', // shared light+dark
-    warning: '#d83aeb', // light — unused at runtime; dark uses `warning-on-dark`
-    'warning-on-dark': '#fa62fc',
-    danger: '#b45be1', // shared light+dark
+    primary: '#c9ff00', // light — unused at runtime; dark uses `primary-on-dark`
+    'primary-dark': '#a8d600', // active/link color (both themes)
+    'primary-on-dark': '#c9ff00',
+    success: '#c9ff00', // light — unused at runtime; dark uses `success-on-dark`
+    'success-on-dark': '#c9ff00',
+    info: '#3b82f6', // shared light+dark
+    warning: '#f7931a', // light — unused at runtime; dark uses `warning-on-dark`
+    'warning-on-dark': '#fe2626',
+    danger: '#dc2626', // shared light+dark
     'rainbow-1': '#fa62fc',
     'rainbow-2': '#be84e8',
     'rainbow-3': '#79abd2',
@@ -51,40 +53,32 @@ const dkColors = {
     'rainbow-5': '#1dd79b',
     'popover-bg': '#1A1A1A',
     'popover-border': 'rgba(255,255,255,0.1)',
-    'card-outline-dark': '#111',
-    'input-placeholder-dark': '#ccc',
+    'card-outline-dark': '#0d0d0d',
+    'input-placeholder-dark': '#999999',
 };
-
-// Phase-2 refactor map — Bootstrap class → Tailwind utilities. Append to this table when you
-// convert a new class family; delete entries as they go to zero usage.
-//
-//   .btn-white / .btn-light (dark theme, in app/scss/dashkit/dark/_overrides-dark.scss)
-//     background-color : idle → e-bg-dk-gray-800-dark      active/hover → e-bg-dk-black-dark
-//     border-color     : idle → e-border-dk-gray-600-dark  active/hover → e-border-dk-gray-700-dark
-//     color            : e-text-dk-white
-//
-//   .btn-black.active  → e-shadow-active   (= 0 0 0 0.15rem #33a382, already declared above)
-//
-//   .card              → e-bg-dk-gray-800-dark e-border-dk-gray-700-dark e-rounded-dk-lg e-shadow-dk-card
-//   .card-header       → e-px-dk-4 e-py-4  (cap padding; consider adding dk-cap-py later)
-//   .card-body         → e-px-dk-4 e-py-dk-4
-//
-//   .text-muted        → e-text-dk-gray-600              (light theme)  /  e-text-dk-gray-700 (dark)
-//   .text-rainbow-N    → e-text-dk-rainbow-{1..5}
-//   .bg-rainbow-N      → e-bg-dk-rainbow-{1..5}
 
 const config: Config = {
     content: ['./app/**/*.{ts,tsx}'],
-    plugins: [],
-    prefix: 'e-',
+    plugins: [
+        tailwindcssAnimate,
+        plugin(({ addUtilities }) => {
+            addUtilities({
+                '.scrollbar-hide': {
+                    'scrollbar-width': 'none',
+                    '-ms-overflow-style': 'none',
+                    '&::-webkit-scrollbar': { display: 'none' },
+                },
+            });
+        }),
+    ],
     theme: {
         extend: {
             boxShadow: {
                 // border for active states from Dashkit
-                active: '0 0 0 0.15rem #33a382',
-                'active-sm': '0 0 0 1px #33a382',
-                'dk-card': '0 0.75rem 1.5rem rgba(20, 24, 22, 0.5)',
-                'dk-lift': '0 1rem 2.5rem rgba(35, 35, 35, 0.1), 0 0.5rem 1rem -0.75rem rgba(35, 35, 35, 0.1)',
+                active: '0 0 0 0.15rem #a8d600',
+                'active-sm': '0 0 0 1px #a8d600',
+                'dk-card': '0 0.75rem 1.5rem rgba(0, 0, 0, 0.5)',
+                'dk-lift': '0 1rem 2.5rem rgba(0, 0, 0, 0.1), 0 0.5rem 1rem -0.75rem rgba(0, 0, 0, 0.1)',
             },
             borderRadius: {
                 'dk-xs': '0.1875rem',
@@ -117,21 +111,43 @@ const config: Config = {
             },
             colors: {
                 dk: dkColors,
-                // TODO: replace with e-text-neutral-400
-                muted: 'oklch(0.6406 0.0038 174.41)', // #8a8d8c
+                // TODO: replace hex with OKLCH.
+                dark: {
+                    accent: '#c9ff00',
+                    background: '#000000',
+                    border: '#1a1a1a',
+                    foreground: '#d4d4d4',
+                    'muted-foreground': '#404040',
+                },
+                // TODO: replace with text-neutral-400
+                muted: 'oklch(0.5 0 0)',
                 'heavy-metal': {
-                    DEFAULT: 'oklch(21.275% 0.00721 164.22)',
-                    50: 'oklch(83.058% 0.01201 161.99)',
-                    100: 'oklch(80.062% 0.01471 162.38)',
-                    200: 'oklch(73.7% 0.0195 166.17)',
-                    300: 'oklch(67.255% 0.0243 164.16)',
-                    400: 'oklch(61.003% 0.02932 162.63)',
-                    500: 'oklch(53.552% 0.02379 165.43)',
-                    600: 'oklch(46.048% 0.0207 163.91)',
-                    700: 'oklch(38.258% 0.0166 166.31)',
-                    800: 'oklch(30.098% 0.01205 160.58)',
-                    900: 'oklch(21.275% 0.00721 164.22)',
-                    950: 'oklch(14.676% 0.004 164.84)',
+                    DEFAULT: '#171717',
+                    50: '#f5f5f5',
+                    100: '#e5e5e5',
+                    200: '#d4d4d4',
+                    300: '#a3a3a3',
+                    400: '#737373',
+                    500: '#525252',
+                    600: '#404040',
+                    700: '#262626',
+                    800: '#171717',
+                    900: '#0a0a0a',
+                    950: '#000000',
+                },
+                'outer-space': {
+                    DEFAULT: '#171717',
+                    50: '#f5f5f5',
+                    100: '#e5e5e5',
+                    200: '#d4d4d4',
+                    300: '#a3a3a3',
+                    400: '#737373',
+                    500: '#525252',
+                    600: '#404040',
+                    700: '#262626',
+                    800: '#1a1a1a',
+                    900: '#0a0a0a',
+                    950: '#000000',
                 },
                 orange: {
                     DEFAULT: 'oklch(68% 0.19 45)',
@@ -194,6 +210,15 @@ const config: Config = {
                 // Grid template for TokenExtensions
                 '12-ext': 'repeat(12, minmax(0, 1fr))',
             },
+            keyframes: {
+                'dropdown-menu': {
+                    from: { opacity: '0' },
+                    to: { opacity: '1' },
+                },
+            },
+            animation: {
+                'dropdown-menu': 'dropdown-menu 0.15s',
+            },
         },
 
         screens: {
@@ -210,6 +235,7 @@ const config: Config = {
             tablet: getScreenDim('md'),
             laptop: getScreenDim('lg'),
             desktop: getScreenDim('xl'),
+            landscape: { raw: '(orientation: landscape)' },
         },
     },
 };

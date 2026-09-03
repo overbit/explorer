@@ -1,15 +1,17 @@
+import { getBase58Encoder } from '@solana/kit';
 import { PUBLIC_KEY_LENGTH } from '@solana/web3.js';
-import { Cluster, clusterFromSlug, clusterSlug } from '@utils/cluster';
-import bs58 from 'bs58';
+import { Cluster, clusterFromSlug, clusterSlug, type ServerCluster } from '@utils/cluster';
 import { NextResponse } from 'next/server';
 
-import { GENESIS_HASHES } from '@/app/entities/chain-id/lib/const';
+import { GENESIS_HASHES } from '@/app/entities/chain-id/server';
 import { resolveSearchTokens, SEARCH_CACHE_HEADERS } from '@/app/features/search/server';
 import { NO_STORE_HEADERS } from '@/app/shared/lib/http-utils';
 
+const BASE58_ENCODER = getBase58Encoder();
+
 const SEARCH_QUERY_MAX_LENGTH = 200;
 
-function clusterFromGenesisHash(genesisHash: string): Cluster | null {
+function clusterFromGenesisHash(genesisHash: string): ServerCluster | null {
     switch (genesisHash) {
         case GENESIS_HASHES.MAINNET:
             return Cluster.MainnetBeta;
@@ -24,7 +26,7 @@ function clusterFromGenesisHash(genesisHash: string): Cluster | null {
 
 function detectQueryType(query: string): 'address' | 'text' {
     try {
-        const decoded = bs58.decode(query);
+        const decoded = BASE58_ENCODER.encode(query);
         return decoded.length === PUBLIC_KEY_LENGTH ? 'address' : 'text';
     } catch {
         return 'text';
@@ -47,7 +49,7 @@ export async function GET(request: Request) {
 
     const cluster = clusterFromSlug(clusterParam || clusterSlug(Cluster.MainnetBeta));
 
-    if (cluster === null) {
+    if (cluster === undefined) {
         return NextResponse.json(
             { error: 'Invalid cluster', success: false },
             { headers: NO_STORE_HEADERS, status: 400 },
@@ -74,7 +76,7 @@ export async function GET(request: Request) {
         }
 
         const queryType = detectQueryType(trimmed);
-        const tokens = await resolveSearchTokens(trimmed, resolvedCluster, '', { filterUnverified });
+        const tokens = await resolveSearchTokens(trimmed, resolvedCluster, { filterUnverified });
         return NextResponse.json(
             { meta: { total: tokens.length }, query: trimmed, queryType, results: { tokens }, success: true },
             { headers: SEARCH_CACHE_HEADERS },
@@ -96,7 +98,7 @@ export async function GET(request: Request) {
     }
 
     const queryType = detectQueryType(trimmed);
-    const tokens = await resolveSearchTokens(trimmed, cluster, '', { filterUnverified });
+    const tokens = await resolveSearchTokens(trimmed, cluster, { filterUnverified });
 
     return NextResponse.json(
         { meta: { total: tokens.length }, query: trimmed, queryType, results: { tokens }, success: true },

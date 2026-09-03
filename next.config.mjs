@@ -1,18 +1,19 @@
 import { withSentryConfig } from '@sentry/nextjs';
 import { withBotId } from 'botid/next/config';
-import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { buildRedirects } from './config/redirects.mjs';
 import { createSentryBuildConfig } from './sentry/config.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// Pin both file-tracing and Turbopack to the project root; otherwise Next walks up to a parent
+// pnpm-workspace.yaml (e.g. in git worktrees) and the two roots disagree.
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
     // Use separate build directory for dev server to avoid conflicts with production builds
     distDir: process.env.NODE_ENV === 'production' ? '.next' : '.next-dev',
+    outputFileTracingRoot: projectRoot,
     images: {
         remotePatterns: [
             {
@@ -23,6 +24,9 @@ const nextConfig = {
             },
         ],
     },
+    // bigint-buffer loads its native .node via `bindings`, which walks up from the module's real
+    // path — bundling it breaks that lookup and forces the pure-JS fallback warning.
+    serverExternalPackages: ['bigint-buffer'],
     async headers() {
         const seoFileHeaders = [
             {
@@ -41,20 +45,13 @@ const nextConfig = {
     async redirects() {
         return buildRedirects();
     },
-    webpack: (config, { isServer }) => {
-        config.resolve.alias = {
-            ...(config.resolve.alias || {}),
-            borsh: path.resolve(__dirname, 'node_modules/borsh'), // force legacy version
-        };
-
-        if (!isServer) {
-            // Fixes npm packages that depend on `fs` module like `@project-serum/anchor`.
-            config.resolve.fallback.fs = false;
-        }
-
-        return config;
+    turbopack: {
+        root: projectRoot,
+        resolveAlias: {
+            // @coral-xyz/anchor's nodewallet/workspace require('fs'), but those paths never run in the browser.
+            fs: { browser: './empty.ts' },
+        },
     },
 };
 
-/// Add wrapper to track errors with Sentry and BotID for bot protection
 export default withBotId(withSentryConfig(nextConfig, createSentryBuildConfig()));

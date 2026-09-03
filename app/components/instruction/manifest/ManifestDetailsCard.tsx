@@ -1,8 +1,8 @@
 import { HexData } from '@components/common/HexData';
+import { cn } from '@components/shared/utils';
+import { extractEventsFromLogs, type ProgramEventPayload } from '@entities/program-logs';
 import { useTransactionDetails } from '@providers/transactions';
-import { cn } from '@shared/utils';
 import { PublicKey, SignatureResult, TransactionInstruction } from '@solana/web3.js';
-import { extractEventsFromLogs } from '@utils/program-logs';
 import React, { useMemo, useState } from 'react';
 import { Code } from 'react-feather';
 
@@ -42,13 +42,17 @@ export function ManifestDetailsCard(props: {
     const eventCards = useMemo(() => {
         if (!isManifestInstruction) return undefined;
 
-        const logMessages = details?.data?.transactionWithMeta?.meta?.logMessages;
+        const transactionWithMeta = details?.data?.transactionWithMeta;
+        const logMessages = transactionWithMeta?.meta?.logMessages;
         if (!logMessages) return undefined;
 
-        const eventDataList = extractEventsFromLogs(logMessages, index);
-        if (eventDataList.length === 0) return undefined;
+        const programIds = transactionWithMeta.transaction.message.instructions.map(instruction =>
+            instruction.programId.toBase58(),
+        );
+        const eventPayloads = extractEventsFromLogs(logMessages, index, programIds);
+        if (eventPayloads.length === 0) return undefined;
 
-        return [<ManifestEventsCard key="events" eventDataList={eventDataList} instructionIndex={index} />];
+        return [<ManifestEventsCard key="events" eventPayloads={eventPayloads} instructionIndex={index} />];
     }, [details, index, isManifestInstruction]);
 
     if (!decodedInstruction) {
@@ -80,7 +84,7 @@ export function ManifestDetailsCard(props: {
                 return (
                     <tr key={keyIndex}>
                         <td>
-                            <div className="me-2 d-md-inline">{account?.label ?? `Account #${keyIndex + 1}`}</div>
+                            <div className="d-md-inline me-2">{account?.label ?? `Account #${keyIndex + 1}`}</div>
                             {isWritable && <span className="badge bg-danger-soft me-1">Writable</span>}
                             {isSigner && <span className="badge bg-info-soft me-1">Signer</span>}
                         </td>
@@ -107,14 +111,14 @@ export function ManifestDetailsCard(props: {
 }
 
 function ManifestEventsCard({
-    eventDataList,
+    eventPayloads,
     instructionIndex,
 }: {
-    eventDataList: string[];
+    eventPayloads: ProgramEventPayload[];
     instructionIndex: number;
 }) {
-    const decodedEvents = eventDataList
-        .map(rawEventData => ({ event: decodeManifestEvent(rawEventData), rawEventData }))
+    const decodedEvents = eventPayloads
+        .map(payload => ({ event: decodeManifestEvent(payload.data), rawEventData: payload.data }))
         .filter((entry): entry is { event: ManifestDecodedAccount; rawEventData: string } => entry.event !== undefined);
 
     if (decodedEvents.length === 0) return undefined;
@@ -150,7 +154,7 @@ function ManifestEventCard({
     return (
         <div className="card mb-2">
             <div className="card-header">
-                <h3 className="card-header-title mb-0 d-flex align-items-center">
+                <h3 className="card-header-title d-flex align-items-center mb-0">
                     <span className="badge bg-info-soft me-2">
                         #{instructionIndex + 1}.{eventIndex + 1}
                     </span>
@@ -164,7 +168,7 @@ function ManifestEventCard({
                 </button>
             </div>
             <div className="table-responsive mb-0">
-                <table className="table table-sm table-nowrap card-table">
+                <table className="table-sm table-nowrap card-table table">
                     <tbody className="list">
                         {showRaw ? (
                             <tr>

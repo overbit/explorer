@@ -1,18 +1,29 @@
-import { ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import type { ParsedInstruction, ParsedTransactionWithMeta, PartiallyDecodedInstruction } from '@solana/web3.js';
-import { PublicKey, SystemProgram } from '@solana/web3.js';
+import type { Address } from '@solana/kit';
+import type { ParsedInstruction, PartiallyDecodedInstruction, PublicKey } from '@solana/web3.js';
+import { SystemProgram } from '@solana/web3.js';
+import { ASSOCIATED_TOKEN_PROGRAM_ADDRESS } from '@solana-program/token';
 
-import { isTokenProgram } from '@/app/shared/model/token-program';
+import { isTokenProgramAddress } from '@/app/shared/model/token-program';
 
 import type { SolTransferInstruction, TokenTransferInstruction } from './types';
 
 // Programs whose top-level invocation may CPI a System.transfer as rent funding for an
 // account they create. Such inner transfers are bookkeeping, not user-intended payments.
-const RENT_FUNDING_PROGRAMS: PublicKey[] = [ASSOCIATED_TOKEN_PROGRAM_ID];
+const RENT_FUNDING_PROGRAMS: Address[] = [ASSOCIATED_TOKEN_PROGRAM_ADDRESS];
 
 export function isRentFundingProgram(programId: PublicKey): boolean {
-    return RENT_FUNDING_PROGRAMS.some(p => p.equals(programId));
+    return RENT_FUNDING_PROGRAMS.some(p => p === programId.toBase58());
 }
+
+// The instruction-bearing slice of a parsed transaction. Declared structurally so callers can
+// pass any transaction version — instruction layout does not vary by version.
+type TransactionInstructionSource = {
+    meta?: {
+        innerInstructions?:
+            { index: number; instructions: (ParsedInstruction | PartiallyDecodedInstruction)[] }[] | null;
+    } | null;
+    transaction: { message: { instructions: (ParsedInstruction | PartiallyDecodedInstruction)[] } };
+};
 
 export type LocatedInstruction<T> = {
     instruction: T;
@@ -28,7 +39,7 @@ export type LocatedInstruction<T> = {
 // Each match carries `topLevelIndex` (and `innerIndex` if the match came from an
 // inner instruction) so downstream loggers can pinpoint the original tx position.
 export function collectTransferInstructions<T extends ParsedInstruction | PartiallyDecodedInstruction>(
-    transaction: ParsedTransactionWithMeta,
+    transaction: TransactionInstructionSource,
     isMatch: (instr: ParsedInstruction | PartiallyDecodedInstruction) => instr is T,
 ): LocatedInstruction<T>[] {
     const innerByIndex = new Map<number, (ParsedInstruction | PartiallyDecodedInstruction)[]>();
@@ -54,7 +65,7 @@ export function isTokenTransferInstruction(
     instruction: ParsedInstruction | PartiallyDecodedInstruction,
 ): instruction is TokenTransferInstruction {
     return (
-        isTokenProgram(instruction.programId.toBase58()) &&
+        isTokenProgramAddress(instruction.programId.toBase58()) &&
         'parsed' in instruction &&
         TOKEN_TRANSFER_TYPES.has(instruction.parsed.type)
     );

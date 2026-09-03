@@ -2,44 +2,48 @@
 
 import { Address } from '@components/common/Address';
 import { ErrorCard } from '@components/common/ErrorCard';
+import { InstructionDetails } from '@components/common/InstructionDetails';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { Signature } from '@components/common/Signature';
 import { Slot } from '@components/common/Slot';
-import { isMangoInstruction, parseMangoInstructionTitle } from '@components/instruction/mango/types';
-import { isSerumInstruction, parseSerumInstructionTitle } from '@components/instruction/serum/types';
 import {
     isTokenLendingInstruction,
     parseTokenLendingInstructionTitle,
 } from '@components/instruction/token-lending/types';
 import { isTokenSwapInstruction, parseTokenSwapInstructionTitle } from '@components/instruction/token-swap/types';
+import { RefreshButton } from '@components/shared/ui/refresh-button';
+import { cn } from '@components/shared/utils';
+import { useTokenInfo } from '@entities/token-info';
+import { isMangoInstruction, parseMangoInstructionTitle } from '@explorer/decoder-mango/detection';
+import { isSerumInstruction, parseSerumInstructionTitle } from '@explorer/decoder-serum/detection';
+import { useAccountHistories } from '@features/transaction-history/model/use-account-history';
+import { useFetchAccountHistory } from '@features/transaction-history/model/use-fetch-account-history';
 import { isTokenProgramData } from '@providers/accounts';
-import { useAccountHistories, useFetchAccountHistory } from '@providers/accounts/history';
 import { isTokenProgramId, TokenInfoWithPubkey, useAccountOwnedTokens } from '@providers/accounts/tokens';
 import { CacheEntry, FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
 import { Details, useFetchTransactionDetails, useTransactionDetailsCache } from '@providers/transactions/parsed';
-import { RefreshButton } from '@shared/ui/refresh-button';
-import { cn } from '@shared/utils';
 import { ConfirmedSignatureInfo, ParsedInstruction, PartiallyDecodedInstruction, PublicKey } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
 import { INNER_INSTRUCTIONS_START_SLOT } from '@utils/index';
-import { getTokenProgramInstructionName } from '@utils/instruction';
-import { displayAddress, intoTransactionInstruction } from '@utils/tx';
+import { getTokenProgramInstructionName, InstructionType } from '@utils/instruction';
+import { displayAddress, intoTransactionInstruction, TokenLabelInfo } from '@utils/tx';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import React, { useCallback } from 'react';
-import { ChevronDown, MinusSquare, PlusSquare } from 'react-feather';
+import { ChevronDown } from 'react-feather';
 
+import { Badge } from '@/app/components/shared/ui/badge';
+import { Button } from '@/app/components/shared/ui/button';
+import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from '@/app/components/shared/ui/dropdown';
 import { INITIAL_TOKENS_TO_FETCH, INITIAL_VISIBLE_COUNT, LOAD_MORE_COUNT } from '@/app/features/token-history/config';
 import { Logger } from '@/app/shared/lib/logger';
+import { toKitAddress } from '@/app/shared/lib/web3js-compat';
+import { Card, CardBody, CardFooter, CardHeader, CardTitle } from '@/app/shared/ui/Card';
+import { BaseTable } from '@/app/shared/ui/Table';
 
 const TRUNCATE_TOKEN_LENGTH = 10;
 const ALL_TOKENS = '';
-
-type InstructionType = {
-    name: string;
-    innerInstructions: (ParsedInstruction | PartiallyDecodedInstruction)[];
-};
 
 export function TokenHistoryCard({ address }: { address: string }) {
     const ownedTokens = useAccountOwnedTokens(address);
@@ -66,8 +70,6 @@ const useQueryFilter = (): string => {
 
 type FilterProps = {
     filter: string;
-    toggle: () => void;
-    show: boolean;
     tokens: TokenInfoWithPubkey[];
 };
 
@@ -75,7 +77,6 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
     const accountHistories = useAccountHistories();
     const fetchAccountHistory = useFetchAccountHistory();
     const transactionDetailsCache = useTransactionDetailsCache();
-    const [showDropdown, setDropdown] = React.useState(false);
     const [tokensToFetchCount, setTokensToFetchCount] = React.useState(INITIAL_TOKENS_TO_FETCH);
     const [visibleTxCount, setVisibleTxCount] = React.useState(INITIAL_VISIBLE_COUNT);
     const filter = useQueryFilter();
@@ -100,7 +101,7 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
     const fetchHistories = React.useCallback(
         (refresh?: boolean) => {
             tokensToFetch.forEach(token => {
-                fetchAccountHistory(token.pubkey, false, refresh);
+                fetchAccountHistory(toKitAddress(token.pubkey), false, refresh);
             });
         },
         [tokensToFetch, fetchAccountHistory],
@@ -115,7 +116,7 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
             newTokens.forEach(token => {
                 const address = token.pubkey.toBase58();
                 if (!accountHistories[address]) {
-                    fetchAccountHistory(token.pubkey, false, true);
+                    fetchAccountHistory(toKitAddress(token.pubkey), false, true);
                 }
             });
             prevTokensToFetchCount.current = tokensToFetchCount;
@@ -188,24 +189,28 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
         }
         if (tokensToFetchCount === 0) {
             return (
-                <div className="card">
-                    <div className="card-header align-items-center">
-                        <h3 className="card-header-title">Token History</h3>
-                    </div>
-                    <div className="card-body">
-                        <p className="text-muted text-center mb-0">
+                <Card ui="dashkit">
+                    <CardHeader ui="dashkit">
+                        <CardTitle as="h3" ui="dashkit">
+                            Token History
+                        </CardTitle>
+                    </CardHeader>
+                    <CardBody ui="dashkit">
+                        <p className="mb-0 text-center text-dk-gray-700">
                             Click the button below to load token transaction history
                         </p>
-                    </div>
-                    <div className="card-footer">
-                        <button
-                            className="btn btn-primary w-100"
+                    </CardBody>
+                    <CardFooter ui="dashkit">
+                        <Button
+                            ui="dashkit"
+                            variant="primary"
+                            className="w-full"
                             onClick={() => setTokensToFetchCount(LOAD_MORE_COUNT)}
                         >
                             Load Token History
-                        </button>
-                    </div>
-                </div>
+                        </Button>
+                    </CardFooter>
+                </Card>
             );
         }
         return (
@@ -220,90 +225,103 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
     });
 
     return (
-        <div className="card">
-            <div className="card-header align-items-center">
-                <h3 className="card-header-title">Token History</h3>
-                <FilterDropdown
-                    filter={filter}
-                    toggle={() => setDropdown(show => !show)}
-                    show={showDropdown}
-                    tokens={tokens}
-                ></FilterDropdown>
+        <Card ui="dashkit">
+            <CardHeader ui="dashkit">
+                <CardTitle as="h3" ui="dashkit">
+                    Token History
+                </CardTitle>
+                <FilterDropdown filter={filter} tokens={tokens} />
                 <RefreshButton
                     analyticsSection="token_history_card"
                     onClick={() => fetchHistories(true)}
                     fetching={fetching}
                 />
-            </div>
+            </CardHeader>
 
-            <div className="table-responsive mb-0">
-                <table className="table table-sm table-nowrap card-table">
-                    <thead>
-                        <tr>
-                            <th className="text-muted w-1">Slot</th>
-                            <th className="text-muted">Result</th>
-                            <th className="text-muted">Token</th>
-                            <th className="text-muted">Instruction Type</th>
-                            <th className="text-muted">Transaction Signature</th>
-                        </tr>
-                    </thead>
-                    <tbody className="list">
-                        {mintAndTxs.slice(0, visibleTxCount).map(({ mint, tx }) => (
-                            <TokenTransactionRow
-                                key={tx.signature}
-                                mint={mint}
-                                tx={tx}
-                                details={transactionDetailsCache[tx.signature]}
-                            />
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+            <BaseTable ui="dashkit" variant="card" nowrap>
+                <BaseTable.Head>
+                    <BaseTable.Row>
+                        <BaseTable.HeaderCell className="w-px text-dk-gray-700">Slot</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Result</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Token</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Instruction Type</BaseTable.HeaderCell>
+                        <BaseTable.HeaderCell className="text-dk-gray-700">Transaction Signature</BaseTable.HeaderCell>
+                    </BaseTable.Row>
+                </BaseTable.Head>
+                <BaseTable.Body>
+                    {mintAndTxs.slice(0, visibleTxCount).map(({ mint, tx }) => (
+                        <TokenTransactionRow
+                            key={tx.signature}
+                            mint={mint}
+                            tx={tx}
+                            details={transactionDetailsCache[tx.signature]}
+                        />
+                    ))}
+                </BaseTable.Body>
+            </BaseTable>
 
-            <div className="card-footer">
+            <CardFooter ui="dashkit">
                 {visibleTxCount < mintAndTxs.length ? (
-                    <button
-                        className="btn btn-primary w-100"
+                    <Button
+                        ui="dashkit"
+                        variant="primary"
+                        className="w-full"
                         onClick={() => setVisibleTxCount(c => c + LOAD_MORE_COUNT)}
                     >
                         {`Show More (${visibleTxCount} of ${mintAndTxs.length})`}
-                    </button>
+                    </Button>
                 ) : tokensToFetchCount < filteredTokens.length ? (
-                    <button
-                        className="btn btn-primary w-100"
+                    <Button
+                        ui="dashkit"
+                        variant="primary"
+                        className="w-full"
                         onClick={() => setTokensToFetchCount(c => c + LOAD_MORE_COUNT)}
                         disabled={fetching}
                     >
                         {fetching ? (
                             <>
-                                <span className="align-text-top spinner-grow spinner-grow-sm me-2"></span>
+                                <span className="spinner-grow spinner-grow-sm mr-1.5 align-text-top"></span>
                                 Loading
                             </>
                         ) : (
                             `Load More Token Accounts (${tokensToFetchCount} of ${filteredTokens.length})`
                         )}
-                    </button>
+                    </Button>
                 ) : allFoundOldest ? (
-                    <div className="text-muted text-center">Fetched full history</div>
+                    <div className="text-center text-dk-gray-700">Fetched full history</div>
                 ) : (
-                    <button className="btn btn-primary w-100" onClick={() => fetchHistories()} disabled={fetching}>
+                    <Button
+                        ui="dashkit"
+                        variant="primary"
+                        className="w-full"
+                        onClick={() => fetchHistories()}
+                        disabled={fetching}
+                    >
                         {fetching ? (
                             <>
-                                <span className="align-text-top spinner-grow spinner-grow-sm me-2"></span>
+                                <span className="spinner-grow spinner-grow-sm mr-1.5 align-text-top"></span>
                                 Loading
                             </>
                         ) : (
                             'Load More History'
                         )}
-                    </button>
+                    </Button>
                 )}
-            </div>
-        </div>
+            </CardFooter>
+        </Card>
     );
 }
 
-const FilterDropdown = ({ filter, toggle, show, tokens }: FilterProps) => {
-    const { cluster } = useCluster();
+// Resolves one mint's label through the shared token-info batch provider (the same cache the holdings rows use).
+// Fetches on mount and coalesces with the holdings fetch into one batched POST.
+// The cache-aware provider then skips this mint on any later re-request (filter change, holdings Load More).
+function TokenFilterLabel({ mint }: { mint: string }) {
+    const { cluster, genesisHash } = useCluster();
+    const info = useTokenInfo(true, mint, cluster, genesisHash);
+    return <>{formatTokenName(mint, cluster, info)}</>;
+}
+
+export function FilterDropdown({ filter, tokens }: FilterProps) {
     const currentSearchParams = useSearchParams();
     const currentPathname = usePathname();
     const buildLocation = useCallback(
@@ -320,41 +338,34 @@ const FilterDropdown = ({ filter, toggle, show, tokens }: FilterProps) => {
         [currentPathname, currentSearchParams],
     );
 
-    const filterOptions: string[] = [ALL_TOKENS];
-    const nameLookup: Map<string, string> = new Map();
-
-    tokens.forEach(token => {
-        const address = token.info.mint.toBase58();
-        if (!nameLookup.has(address)) {
-            filterOptions.push(address);
-            nameLookup.set(address, formatTokenName(address, cluster, token));
-        }
-    });
+    const filterOptions = React.useMemo(
+        () => [ALL_TOKENS, ...new Set(tokens.map(token => token.info.mint.toBase58()))],
+        [tokens],
+    );
 
     return (
-        <div className="dropdown me-2">
-            <small className="me-2">Filter:</small>
-            <button className="btn btn-white btn-sm" type="button" onClick={toggle}>
-                {filter === ALL_TOKENS ? 'All Tokens' : nameLookup.get(filter)}{' '}
-                <ChevronDown size={15} className="align-text-top" />
-            </button>
-            <div className={cn('token-filter dropdown-menu-end dropdown-menu', show && 'show')}>
+        <Dropdown className="mr-1.5">
+            <small className="mr-1.5">Filter:</small>
+            <DropdownToggle asChild>
+                <Button ui="dashkit" variant="white" size="sm" type="button">
+                    {filter === ALL_TOKENS ? 'All Tokens' : <TokenFilterLabel mint={filter} />}{' '}
+                    <ChevronDown size={15} className="align-text-top" />
+                </Button>
+            </DropdownToggle>
+            <DropdownMenu align="end" className="max-h-80 overflow-y-auto">
                 {filterOptions.map(filterOption => {
                     return (
-                        <Link
-                            key={filterOption}
-                            href={buildLocation(filterOption)}
-                            className={cn('dropdown-item', filterOption === filter && 'active')}
-                            onClick={toggle}
-                        >
-                            {filterOption === ALL_TOKENS ? 'All Tokens' : nameLookup.get(filterOption) || filterOption}
-                        </Link>
+                        <DropdownItem asChild key={filterOption} className={cn(filterOption === filter && 'active')}>
+                            <Link href={buildLocation(filterOption)}>
+                                {filterOption === ALL_TOKENS ? 'All Tokens' : <TokenFilterLabel mint={filterOption} />}
+                            </Link>
+                        </DropdownItem>
                     );
                 })}
-            </div>
-        </div>
+            </DropdownMenu>
+        </Dropdown>
     );
-};
+}
 
 const TokenTransactionRow = React.memo(function TokenTransactionRow({
     mint,
@@ -366,7 +377,7 @@ const TokenTransactionRow = React.memo(function TokenTransactionRow({
     details: CacheEntry<Details> | undefined;
 }) {
     let statusText: string;
-    let statusClass: string;
+    let statusClass: 'success' | 'warning';
     if (tx.err) {
         statusClass = 'warning';
         statusText = 'Failed';
@@ -377,16 +388,18 @@ const TokenTransactionRow = React.memo(function TokenTransactionRow({
 
     return (
         <tr key={tx.signature}>
-            <td className="w-1">
+            <td className="w-px">
                 <Slot slot={tx.slot} link />
             </td>
 
             <td>
-                <span className={`badge bg-${statusClass}-soft`}>{statusText}</span>
+                <Badge ui="dashkit" variant={statusClass}>
+                    {statusText}
+                </Badge>
             </td>
 
             <td>
-                <Address pubkey={mint} link truncate />
+                <Address pubkey={mint} link />
             </td>
 
             <InstructionDetailsCell signature={tx.signature} details={details} tx={tx} />
@@ -398,50 +411,7 @@ const TokenTransactionRow = React.memo(function TokenTransactionRow({
     );
 });
 
-function InstructionDetails({ instructionType, tx }: { instructionType: InstructionType; tx: ConfirmedSignatureInfo }) {
-    const [expanded, setExpanded] = React.useState(false);
-
-    const instructionTypes = instructionType.innerInstructions
-        .map(ix => {
-            if ('parsed' in ix && isTokenProgramData(ix)) {
-                return getTokenProgramInstructionName(ix, tx);
-            }
-            return undefined;
-        })
-        .filter(type => type !== undefined);
-
-    return (
-        <>
-            <p className="tree">
-                {instructionTypes.length > 0 && (
-                    <span
-                        onClick={e => {
-                            e.preventDefault();
-                            setExpanded(!expanded);
-                        }}
-                        className="c-pointer me-2"
-                    >
-                        {expanded ? (
-                            <MinusSquare className="align-text-top" size={13} />
-                        ) : (
-                            <PlusSquare className="align-text-top" size={13} />
-                        )}
-                    </span>
-                )}
-                {instructionType.name}
-            </p>
-            {expanded && (
-                <ul className="tree">
-                    {instructionTypes.map((type, index) => {
-                        return <li key={index}>{type}</li>;
-                    })}
-                </ul>
-            )}
-        </>
-    );
-}
-
-function formatTokenName(pubkey: string, cluster: Cluster, tokenInfo: TokenInfoWithPubkey): string {
+function formatTokenName(pubkey: string, cluster: Cluster, tokenInfo?: TokenLabelInfo): string {
     let display = displayAddress(pubkey, cluster, tokenInfo);
 
     if (display === pubkey) {
@@ -475,13 +445,11 @@ function InstructionDetailsCell({
     if (!details) {
         return (
             <td>
-                <span
-                    className="btn btn-sm btn-outline-primary py-0 px-1 lh-1 text-xs"
-                    role="button"
-                    onClick={handleLoadClick}
-                >
-                    Load
-                </span>
+                <Button ui="dashkit" variant="outline-primary" size="sm" className="px-[3px] py-0 leading-none" asChild>
+                    <span role="button" onClick={handleLoadClick}>
+                        Load
+                    </span>
+                </Button>
             </td>
         );
     }
@@ -489,7 +457,7 @@ function InstructionDetailsCell({
     if (isFetching) {
         return (
             <td>
-                <span className="align-text-top spinner-grow spinner-grow-sm me-2"></span>
+                <span className="spinner-grow spinner-grow-sm mr-1.5 align-text-top"></span>
                 Loading
             </td>
         );
@@ -498,13 +466,11 @@ function InstructionDetailsCell({
     if (hasFailed || !instructions) {
         return (
             <td>
-                <span
-                    className="btn btn-sm btn-outline-warning py-0 px-1 lh-1 text-xs"
-                    role="button"
-                    onClick={handleLoadClick}
-                >
-                    Retry
-                </span>
+                <Button ui="dashkit" variant="outline-warning" size="sm" className="px-[3px] py-0 leading-none" asChild>
+                    <span role="button" onClick={handleLoadClick}>
+                        Retry
+                    </span>
+                </Button>
             </td>
         );
     }

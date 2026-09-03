@@ -1,15 +1,15 @@
 import { isTokenProgramId } from '@providers/accounts/tokens';
-import { MintLayout } from '@solana/spl-token';
 import type { AccountInfo, ParsedAccountData, PublicKey, SimulatedTransactionAccountInfo } from '@solana/web3.js';
-import { getMintSize, getTokenSize } from '@solana-program/token';
+import { getMintDecoder, getMintSize, getTokenSize } from '@solana-program/token';
 
-import { fromBase64, toBuffer } from '@/app/shared/lib/bytes';
-import { isTokenProgram } from '@/app/shared/model/token-program';
+import { fromBase64 } from '@/app/shared/lib/bytes';
+import { isTokenProgramAddress } from '@/app/shared/model/token-program';
 
 import { ACCOUNT_TYPE_MINT } from './token-layout';
 
 const MINT_SIZE = getMintSize();
 const TOKEN_ACCOUNT_SIZE = getTokenSize();
+const mintDecoder = getMintDecoder();
 import { toParsedData } from './token-program';
 import type { MintDecimalsMap } from './types';
 
@@ -64,13 +64,12 @@ function decimalsFromPostAccount(
     const dataBase64 = accountInfo?.data[0];
     const owner = accountInfo?.owner;
 
-    if (!owner || !dataBase64 || !isTokenProgram(owner)) return undefined;
+    if (!owner || !dataBase64 || !isTokenProgramAddress(owner)) return undefined;
 
     const bytes = fromBase64(dataBase64);
     if (!isMintBuffer(bytes)) return undefined;
 
-    // MintLayout.decode uses @solana/buffer-layout which requires Buffer
-    const mint = MintLayout.decode(toBuffer(bytes.subarray(0, MINT_SIZE)));
+    const mint = mintDecoder.decode(bytes.subarray(0, MINT_SIZE));
     return { decimals: mint.decimals, mint: key.toBase58() };
 }
 

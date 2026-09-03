@@ -1,94 +1,145 @@
 'use client';
-import { getIdlVersion, isIdlProgramIdMismatch, type SupportedIdl, useAnchorProgram } from '@entities/idl';
-import { useProgramMetadataCodamaIdl, useProgramMetadataIdl } from '@entities/program-metadata';
+import { LoadingCard } from '@components/common/LoadingCard';
+import { AddressLink } from '@components/shared/address';
+import { Badge } from '@components/shared/ui/badge';
+import { Button, buttonVariants } from '@components/shared/ui/button';
+import {
+    Dialog,
+    DialogClose,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@components/shared/ui/dialog';
+import { ExternalLink } from '@components/shared/ui/external-link';
+import {
+    buildProgramName,
+    getIdlBadgeLabel,
+    getIdlProgramVersion,
+    IdlVariant,
+    isIdlProgramIdMismatch,
+    type SupportedIdl,
+    useProgramIdls,
+} from '@entities/idl';
 import { useCluster } from '@providers/cluster';
-import { Badge } from '@shared/ui/badge';
-import { cn } from '@shared/utils';
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ExternalLink } from 'react-feather';
+import { type Address } from '@solana/kit';
+import { useState } from 'react';
+import { AlertCircle, AlertTriangle, ExternalLink as ExternalLinkIcon } from 'react-feather';
 
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/app/components/shared/ui/tooltip';
+import { cn } from '@/app/components/shared/utils';
+import { Card, CardBody, CardHeader, CardTitle } from '@/app/shared/ui/Card';
+import { BaseWarningCard } from '@/app/shared/ui/WarningCard';
 import { clusterSlug } from '@/app/utils/cluster';
 
-import { BaseWarningCard } from '../interactive-idl/ui/BaseWarningCard';
-import { IdlVariant, useIdlLastTransactionDate } from '../model/use-idl-last-transaction-date';
 import { IdlInstructionSection } from './IdlInstructionSection';
 import { IdlSection } from './IdlSection';
-
-type IdlTab = {
-    id: IdlVariant;
-    idl: SupportedIdl;
-    title: string;
-    badge: string;
-};
 
 export function IdlCard({ programId }: { programId: string }) {
     const { url, cluster } = useCluster();
     const network = clusterSlug(cluster);
-    const { idl } = useAnchorProgram(programId, url, cluster);
-    const { programMetadataIdl } = useProgramMetadataIdl(programId, url, cluster);
-    const { codamaIdl } = useProgramMetadataCodamaIdl(programId, url, cluster);
-    const [activeTabIndex, setActiveTabIndex] = useState<number>();
+    const { anchorIdl, anchorIdlAddress, programMetadataIdl, programMetadataIdlAddress, isLoading } = useProgramIdls(
+        programId,
+        url,
+        cluster,
+    );
     const [searchStr, setSearchStr] = useState<string>('');
+    const [isOrquestraDialogOpen, setIsOrquestraDialogOpen] = useState(false);
 
-    const preferredIdlVariant = useIdlLastTransactionDate(programId, Boolean(idl), Boolean(programMetadataIdl));
+    // Link to the standalone IDL explorer (idl.solana.com) — the full history view across every IDL
+    // source for this program; this card surfaces only the single latest IDL.
+    const idlHistoryUrl = `https://idl.solana.com/?${new URLSearchParams({
+        cluster: network,
+        mode: 'history',
+        programId,
+    }).toString()}`;
+    const idlHistoryLink = (
+        <ExternalLink
+            href={idlHistoryUrl}
+            className={cn(buttonVariants({ size: 'sm', ui: 'dashkit', variant: 'white' }), 'whitespace-nowrap')}
+        >
+            IDL history
+            <ExternalLinkIcon className="ml-1.5 align-text-top" size={13} />
+        </ExternalLink>
+    );
 
-    const tabs = useMemo<IdlTab[]>(() => {
-        const idlTabs: IdlTab[] = [];
+    // Orquestra exposes this program's IDL as MCP tooling and an API; its project page is
+    // cluster-agnostic, so the link is offered regardless of the selected cluster. Like the Castaway
+    // "Generate SDK" flow, it goes through a leaving-the-Explorer interstitial that shows the
+    // destination URL before opening it.
+    const orquestraUrl = `https://orquestra.dev/project/${programId}`;
+    const orquestraLink = (
+        <Button
+            ui="dashkit"
+            variant="white"
+            size="sm"
+            className="whitespace-nowrap"
+            onClick={() => setIsOrquestraDialogOpen(true)}
+        >
+            MCP &amp; API
+            <ExternalLinkIcon className="ml-1.5 align-text-top" size={13} />
+        </Button>
+    );
 
-        // Add pmpTab first (default)
-        if (programMetadataIdl) {
-            idlTabs.push({
-                badge: 'Program Metadata IDL',
-                id: IdlVariant.ProgramMetadata,
-                idl: programMetadataIdl,
-                title: 'Program Metadata',
-            });
+    const headerLinks = (
+        <div className="flex flex-wrap items-center gap-2">
+            {idlHistoryLink}
+            {orquestraLink}
+            <Dialog open={isOrquestraDialogOpen} onOpenChange={setIsOrquestraDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <AlertCircle className="text-destructive" size={16} />
+                            Leaving Solana Explorer
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-2 pl-6">
+                        <DialogDescription>You are now leaving Explorer and going to Orquestra.</DialogDescription>
+                        <DialogDescription className="break-all font-mono text-xs">{orquestraUrl}</DialogDescription>
+                    </div>
+                    <DialogFooter>
+                        <DialogClose asChild>
+                            <Button variant="outline" size="sm">
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => {
+                                window.open(orquestraUrl, '_blank', 'noopener,noreferrer');
+                                setIsOrquestraDialogOpen(false);
+                            }}
+                        >
+                            Continue
+                            <ExternalLinkIcon size={12} />
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+
+    // Single IDL view: show the program-metadata (PMP) IDL, falling back to the Anchor source only
+    // when no PMP IDL exists.
+    const idl: SupportedIdl | undefined = programMetadataIdl ?? anchorIdl;
+    const isFallback = !programMetadataIdl && Boolean(anchorIdl);
+
+    if (!idl) {
+        if (isLoading) {
+            return <LoadingCard message="Loading program IDL" />;
         }
-
-        // Optionally add anchor tab
-        if (idl) {
-            const anchorTab: IdlTab = {
-                badge: 'Anchor IDL',
-                id: IdlVariant.Anchor,
-                idl: idl,
-                title: 'Anchor',
-            };
-            // If anchor is preferred, put it first
-            if (preferredIdlVariant === IdlVariant.Anchor) {
-                idlTabs.unshift(anchorTab);
-            } else {
-                idlTabs.push(anchorTab);
-            }
-        }
-
-        // Optionally add codama tab
-        if (codamaIdl) {
-            idlTabs.push({
-                badge: 'Codama IDL',
-                id: IdlVariant.Codama,
-                idl: codamaIdl,
-                title: 'Codama',
-            });
-        }
-
-        return idlTabs;
-    }, [idl, programMetadataIdl, codamaIdl, preferredIdlVariant]);
-
-    useEffect(() => {
-        // Activate first tab when tabs are available
-        if (tabs.length > 0 && activeTabIndex === undefined) {
-            setActiveTabIndex(0);
-        }
-    }, [tabs, activeTabIndex]);
-
-    if (tabs.length === 0 || activeTabIndex === undefined) {
         return (
-            <div className="card">
-                <div className="card-header">
-                    <h4 className="card-header-title">Program IDL</h4>
-                </div>
-                <div className="card-body">
-                    <div className="e-mb-6 e-flex e-items-center e-gap-2 e-text-destructive">
+            <Card ui="dashkit">
+                <CardHeader ui="dashkit">
+                    <CardTitle as="h4" ui="dashkit">
+                        Program IDL
+                    </CardTitle>
+                    {headerLinks}
+                </CardHeader>
+                <CardBody ui="dashkit">
+                    <div className="mb-6 flex items-center gap-2 text-destructive">
                         <AlertTriangle size={16} />
                         <span>
                             This program doesn&apos;t have an IDL yet. If you&apos;re the developer, upload it using the
@@ -96,57 +147,109 @@ export function IdlCard({ programId }: { programId: string }) {
                         </span>
                     </div>
 
-                    <div className="e-space-y-6">
+                    <div className="space-y-6">
                         <IdlInstructionSection
                             title="Upload IDL"
                             description="Use this command to upload generated idl in JSON format"
                             commands={['npx @solana-program/program-metadata@latest write idl $PROGRAM_ID ./idl.json']}
                         />
 
-                        <div className="e-flex e-items-center e-justify-between">
+                        <div className="flex items-center justify-between">
                             <span>In case you want to upload IDL with a multisig, follow the documentation.</span>
-                            <a
-                                href="https://github.com/solana-program/program-metadata?tab=readme-ov-file#commands"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-outline-primary btn-sm e-whitespace-nowrap"
+                            <Button
+                                ui="dashkit"
+                                variant="outline-primary"
+                                size="sm"
+                                className="whitespace-nowrap"
+                                asChild
                             >
-                                Full documentation
-                                <ExternalLink className="align-text-top ms-2" size={13} />
-                            </a>
+                                <ExternalLink href="https://github.com/solana-program/program-metadata?tab=readme-ov-file#commands">
+                                    Full documentation
+                                    <ExternalLinkIcon className="ml-1.5 align-text-top" size={13} />
+                                </ExternalLink>
+                            </Button>
                         </div>
                     </div>
-                </div>
-            </div>
+                </CardBody>
+            </Card>
         );
     }
 
-    const activeTab = tabs[activeTabIndex];
-    const isMismatch = isIdlProgramIdMismatch(activeTab.idl, programId);
+    const isMismatch = isIdlProgramIdMismatch(idl, programId);
+    // Single badge: the IDL standard with its version(s) — `Codama (version 1.5.1)` /
+    // `Anchor 0.30.1 (version 0.1.0)` / `Anchor (legacy)`. The program's own semver lives in the info
+    // rows below. Dashkit style: the Anchor fallback (no PMP IDL) is "warning" (matching the "Program
+    // has no security.txt" badge) with the adjacent info icon; otherwise (any PMP IDL) it's "success".
+    const badge = (
+        <div className="flex flex-wrap items-center gap-2">
+            <Badge ui="dashkit" variant={isFallback ? 'warning' : 'success'}>
+                {getIdlBadgeLabel(idl)}
+            </Badge>
+            {isFallback && (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <span
+                            className="inline-flex cursor-help items-center text-dk-warning-on-dark"
+                            aria-label="Fallback IDL source"
+                        >
+                            <AlertCircle size={14} />
+                        </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-80">
+                        No Program Metadata (PMP) IDL was found, so the Explorer is showing the IDL from the
+                        program&apos;s on-chain Anchor IDL account instead.
+                    </TooltipContent>
+                </Tooltip>
+            )}
+        </div>
+    );
+
+    // Metadata shown directly under the badge: the storage account the displayed IDL was read from,
+    // which source it came from, and the program's own version (distinct from the badge's spec label).
+    const idlAddress = isFallback ? anchorIdlAddress : programMetadataIdlAddress;
+    const idlSourceLabel = isFallback ? 'Anchor' : 'PMP';
+    const programVersion = getIdlProgramVersion(idl);
+    // Codama / modern Anchor names only; legacy Anchor top-level name is intentionally not shown.
+    const programName = buildProgramName([idl]);
+    const info = (
+        <dl className="flex flex-col gap-1 text-xs">
+            {idlAddress && (
+                <div className="flex items-baseline gap-2">
+                    <dt className="w-32 shrink-0 text-neutral-400">Address</dt>
+                    <dd className="flex min-w-0 items-center gap-1.5 text-white">
+                        <AddressLink address={idlAddress as Address} truncate={{ head: 4, tail: 4 }} />
+                        <span className="text-neutral-500">(PDA)</span>
+                    </dd>
+                </div>
+            )}
+            {programName && (
+                <div className="flex items-baseline gap-2">
+                    <dt className="w-32 shrink-0 text-neutral-400">Name</dt>
+                    <dd className="text-white">{programName}</dd>
+                </div>
+            )}
+            <div className="flex items-baseline gap-2">
+                <dt className="w-32 shrink-0 text-neutral-400">Source</dt>
+                <dd className="text-white">{idlSourceLabel}</dd>
+            </div>
+            {programVersion && (
+                <div className="flex items-baseline gap-2">
+                    <dt className="w-32 shrink-0 text-neutral-400">Program Version</dt>
+                    <dd className="text-white">{programVersion}</dd>
+                </div>
+            )}
+        </dl>
+    );
 
     return (
-        <div className="card">
-            <div className="card-header">
-                <div className="nav nav-tabs e-border-0" role="tablist">
-                    {tabs
-                        .filter(tab => tab.idl)
-                        .map(tab => (
-                            <button
-                                key={tab.title}
-                                className={cn('nav-item nav-link', {
-                                    active: tab.id === activeTab?.id,
-                                })}
-                                onClick={() => {
-                                    setActiveTabIndex(tabs.findIndex(t => t.id === tab.id));
-                                    setSearchStr('');
-                                }}
-                            >
-                                {tab.title}
-                            </button>
-                        ))}
-                </div>
-            </div>
-            <div className="card-body">
+        <Card ui="dashkit">
+            <CardHeader ui="dashkit">
+                <CardTitle as="h4" ui="dashkit">
+                    Program IDL
+                </CardTitle>
+                {headerLinks}
+            </CardHeader>
+            <CardBody ui="dashkit">
                 {isMismatch ? (
                     <BaseWarningCard
                         message="IDL Program ID Mismatch"
@@ -154,23 +257,17 @@ export function IdlCard({ programId }: { programId: string }) {
                     />
                 ) : (
                     <IdlSection
-                        badge={
-                            <Badge
-                                size="xs"
-                                variant={getIdlVersion(activeTab.idl) === 'Legacy' ? 'destructive' : 'success'}
-                            >
-                                {getIdlVersion(activeTab.idl)} {activeTab.badge}
-                            </Badge>
-                        }
-                        idl={activeTab.idl}
-                        idlSource={activeTab.id}
+                        badge={badge}
+                        info={info}
+                        idl={idl}
+                        idlSource={isFallback ? IdlVariant.Anchor : IdlVariant.ProgramMetadata}
                         network={network}
                         programId={programId}
                         searchStr={searchStr}
                         onSearchChange={setSearchStr}
                     />
                 )}
-            </div>
-        </div>
+            </CardBody>
+        </Card>
     );
 }

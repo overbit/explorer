@@ -1,21 +1,30 @@
 import { BaseInstructionCard } from '@components/common/BaseInstructionCard';
-import { useAnchorProgram } from '@entities/idl';
+import { type InstructionSurface, InstructionSurfaceProvider } from '@entities/instruction-card';
+import { isParsedInstruction, toParsedTransaction, useInstructionParser } from '@entities/instruction-parser';
+import {
+    BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL,
+    SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_LABEL,
+    SPL_TOKEN_2022_PROGRAM_LABEL,
+    SPL_TOKEN_PROGRAM_LABEL,
+    SYSTEM_PROGRAM_LABEL,
+} from '@explorer/parsers';
+import { AssociatedTokenDetailsCard } from '@features/decode-instruction-associated-token';
+import { LighthouseDetailsCard } from '@features/decode-instruction-lighthouse';
+import { isProgramMetadataInstruction } from '@features/decode-instruction-pmp/detection';
+import { IdlInstructionCard, useIdlInstructionDecode } from '@features/decode-instruction-with-idl';
 import { MetaplexTokenMetadataDetailsCard } from '@features/mpl-token-metadata';
-import { MPL_TOKEN_METADATA_PROGRAM_ID } from '@metaplex-foundation/mpl-token-metadata';
 import { useCluster } from '@providers/cluster';
-import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import {
     AddressLookupTableAccount,
     type CompiledInnerInstruction,
     ComputeBudgetProgram,
-    SystemProgram,
-    TransactionInstruction,
+    type TransactionInstruction,
     TransactionMessage,
-    VersionedMessage,
+    type VersionedMessage,
 } from '@solana/web3.js';
-import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022';
 import { getProgramName } from '@utils/tx';
-import React from 'react';
+import dynamic from 'next/dynamic';
+import React, { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { isTokenBatchInstruction, resolveInnerBatchInstructions, TokenBatchCard } from '@/app/features/token-batch';
@@ -25,15 +34,33 @@ import { FetchStatus } from '@/app/providers/cache';
 import { ErrorCard } from '../common/ErrorCard';
 import { InspectorInstructionCard as InspectorInstructionCardComponent } from '../common/InspectorInstructionCard';
 import { LoadingCard } from '../common/LoadingCard';
-import AnchorDetailsCard from '../instruction/AnchorDetailsCard';
+import { BpfUpgradeableLoaderDetailsCard } from '../instruction/bpf-upgradeable-loader/BpfUpgradeableLoaderDetailsCard';
 import { ComputeBudgetDetailsCard } from '../instruction/ComputeBudgetDetailsCard';
 import { SystemDetailsCard } from '../instruction/system/SystemDetailsCard';
 import { TokenDetailsCard } from '../instruction/token/TokenDetailsCard';
-import { AssociatedTokenDetailsCard } from './associated-token/AssociatedTokenDetailsCard';
-import { intoParsedInstruction, intoParsedTransaction } from './into-parsed-data';
+import { AddressWithContextCell } from './AddressWithContextCell';
 import { UnknownDetailsCard } from './UnknownDetailsCard';
 
 const INSPECTOR_RESULT = { err: null };
+const INSPECTOR_SIGNATURE = '';
+
+// The PMP card carries the generated client plus pako/yaml/smol-toml (~35 kB gzip), which only a transaction that
+// actually touches the program needs. `isProgramMetadataInstruction` comes from the light `/detection` entry so
+// the branch below can stay static.
+const PmpDetailsCard = dynamic(() => import('@features/decode-instruction-pmp').then(mod => mod.PmpDetailsCard), {
+    loading: () => <LoadingCard />,
+    ssr: false,
+});
+
+const INSPECTOR_SURFACE: InstructionSurface = {
+    // The inspector resolves an address against the transaction under inspection
+    // rather than linking out to its account page.
+    Address: AddressWithContextCell,
+    Shell: InspectorInstructionCardComponent,
+    result: INSPECTOR_RESULT,
+    // `InspectorInstructionCard` renders its own Program row, so the fields must not.
+    showProgramField: false,
+};
 
 export function InstructionsSection({
     message,
@@ -42,7 +69,6 @@ export function InstructionsSection({
     message: VersionedMessage;
     compiledInnerInstructions?: CompiledInnerInstruction[];
 }) {
-    // Fetch all address lookup tables
     const hydratedTables = useAddressLookupTables(
         message.addressTableLookups.map(lookup => lookup.accountKey.toString()),
     );
@@ -80,7 +106,7 @@ export function InstructionsSection({
         : {};
 
     return (
-        <>
+        <InstructionSurfaceProvider surface={INSPECTOR_SURFACE}>
             {transactionMessage.instructions.map((ix, index) => {
                 const batchInnerCards = batchByIndex[index]?.map((innerIx, childIndex) => (
                     <ErrorBoundary key={childIndex} fallback={null}>
@@ -98,7 +124,7 @@ export function InstructionsSection({
                     />
                 );
             })}
-        </>
+        </InstructionSurfaceProvider>
     );
 }
 
@@ -113,26 +139,59 @@ function InspectorInstructionCard({
     index: number;
     innerCards?: React.ReactNode[];
 }) {
-    const { cluster, url } = useCluster();
+    const { cluster } = useCluster();
+    const dispatcher = useInstructionParser();
 
     const programId = ix.programId;
     const programName = getProgramName(programId.toBase58(), cluster);
-    const anchorProgram = useAnchorProgram(programId.toString(), url, cluster);
+    const parsedIx = useMemo(() => dispatcher.fromTransactionInstruction(ix), [dispatcher, ix]);
+    const parsedTx = useMemo(
+        () => (isParsedInstruction(parsedIx) ? toParsedTransaction(ix, message, [parsedIx]) : undefined),
+        [ix, message, parsedIx],
+    );
 
-    if (anchorProgram.program) {
+    // Dynamic IDL tier — shared with the tx page. See app/features/transaction/ui/InstructionsSection.tsx.
+    const idlDecode = useIdlInstructionDecode({ programId: programId.toString(), raw: ix });
+
+    // PMP owns every instruction on its program id: `setData`/`initialize`/`write` render decoded content from
+    // the bundled typed decoders (no IDL needed), and the housekeeping instructions delegate to the IDL tier
+    // from inside the card. Must sit before the generic idlDecode tier so it wins for the content instructions.
+    if (isProgramMetadataInstruction(ix)) {
         return (
-            <ErrorBoundary
-                fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName="Unknown Program" />}
-            >
-                <AnchorDetailsCard
-                    anchorProgram={anchorProgram.program}
-                    index={index}
-                    innerCards={undefined}
-                    ix={ix}
-                    result={{ err: null }}
-                    signature=""
-                />
-            </ErrorBoundary>
+            <PmpDetailsCard
+                ix={ix}
+                index={index}
+                result={INSPECTOR_RESULT}
+                innerCards={innerCards}
+                InstructionCardComponent={BaseInstructionCard}
+                // The card cannot import the IDL feature (boundaries/dependencies), so this surface decides what
+                // a non-content PMP instruction falls back to. Same two outcomes as before the branch existed.
+                fallback={
+                    idlDecode ? (
+                        <IdlInstructionCard
+                            decoded={idlDecode}
+                            ix={ix}
+                            index={index}
+                            result={INSPECTOR_RESULT}
+                            signature={INSPECTOR_SIGNATURE}
+                        />
+                    ) : (
+                        <UnknownDetailsCard index={index} ix={ix} programName={programName} innerCards={innerCards} />
+                    )
+                }
+            />
+        );
+    }
+
+    if (idlDecode) {
+        return (
+            <IdlInstructionCard
+                decoded={idlDecode}
+                ix={ix}
+                index={index}
+                result={INSPECTOR_RESULT}
+                signature={INSPECTOR_SIGNATURE}
+            />
         );
     }
 
@@ -146,100 +205,30 @@ function InspectorInstructionCard({
         );
     }
 
-    /// Handle program-specific cards here
-    //  - keep signature (empty string as we do not submit anything) for backward compatibility with the data from Transaction
-    //  - result is `err: null` as at this point there should not be errors
-    const result = { err: null };
-    const signature = '';
+    // Compute Budget instructions are not RPC-pre-parsed and its DetailsCard
+    // decodes raw bytes directly, so no parser entry is needed today. Phase 3
+    // of the unification will fold this into the registry.
+    if (ComputeBudgetProgram.programId.equals(programId)) {
+        return (
+            <ComputeBudgetDetailsCard
+                key={index}
+                ix={ix}
+                index={index}
+                result={INSPECTOR_RESULT}
+                signature={INSPECTOR_SIGNATURE}
+                InstructionCardComponent={BaseInstructionCard}
+            />
+        );
+    }
 
-    switch (ix.programId.toString()) {
-        case ASSOCIATED_TOKEN_PROGRAM_ID.toString(): {
-            const asParsedInstruction = intoParsedInstruction(ix);
-            return (
-                <AssociatedTokenDetailsCard
-                    key={index}
-                    ix={asParsedInstruction}
-                    raw={ix}
-                    message={message}
-                    index={index}
-                    result={result}
-                />
-            );
-        }
-        case ComputeBudgetProgram.programId.toString(): {
-            return (
-                <ComputeBudgetDetailsCard
-                    key={index}
-                    ix={ix}
-                    index={index}
-                    result={result}
-                    signature={signature}
-                    InstructionCardComponent={BaseInstructionCard}
-                />
-            );
-        }
-        case SystemProgram.programId.toString(): {
-            const asParsedInstruction = intoParsedInstruction(ix);
-            const asParsedTransaction = intoParsedTransaction(ix, message);
-            return (
-                <SystemDetailsCard
-                    key={index}
-                    ix={asParsedInstruction}
-                    tx={asParsedTransaction}
-                    index={index}
-                    result={result}
-                    raw={ix}
-                />
-            );
-        }
-        case TOKEN_PROGRAM_ID.toString(): {
-            const asParsedInstruction = intoParsedInstruction(ix);
-            const asParsedTransaction = intoParsedTransaction(ix, message, [asParsedInstruction]);
-            // Only render TokenDetailsCard if the instruction was successfully parsed
-            if (asParsedInstruction.parsed?.type) {
-                return (
-                    <ErrorBoundary
-                        fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
-                    >
-                        <TokenDetailsCard
-                            key={index}
-                            ix={asParsedInstruction}
-                            tx={asParsedTransaction}
-                            index={index}
-                            result={result}
-                            InstructionCardComponent={InspectorInstructionCardComponent}
-                            message={message}
-                            raw={ix}
-                        />
-                    </ErrorBoundary>
-                );
-            }
-            // Fall through to unknown if parsing failed
-            break;
-        }
-        case TOKEN_2022_PROGRAM_ADDRESS: {
-            const asParsedInstruction = intoParsedInstruction(ix);
-            const asParsedTransaction = intoParsedTransaction(ix, message, [asParsedInstruction]);
-            // Only render TokenDetailsCard if the instruction was successfully parsed
-            if (asParsedInstruction.parsed?.type) {
-                return (
-                    <ErrorBoundary
-                        fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
-                    >
-                        <TokenDetailsCard
-                            key={index}
-                            ix={asParsedInstruction}
-                            tx={asParsedTransaction}
-                            index={index}
-                            result={result}
-                        />
-                    </ErrorBoundary>
-                );
-            }
-            // Fall through to unknown if parsing failed
-            break;
-        }
-        case MPL_TOKEN_METADATA_PROGRAM_ID: {
+    if (!parsedIx) {
+        return (
+            <UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} innerCards={innerCards} />
+        );
+    }
+
+    if ('unknown' in parsedIx) {
+        if (parsedIx.programLabel === 'mpl-token-metadata') {
             return (
                 <ErrorBoundary
                     fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
@@ -248,15 +237,122 @@ function InspectorInstructionCard({
                         key={index}
                         ix={ix}
                         index={index}
-                        result={result}
+                        result={INSPECTOR_RESULT}
                         InstructionCardComponent={BaseInstructionCard}
                     />
                 </ErrorBoundary>
             );
         }
-        default: {
-            // unknown program; allow to render the next card
-        }
+        return (
+            <UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} innerCards={innerCards} />
+        );
+    }
+
+    // `parsedTx` is non-null here by construction (it's built whenever `parsedIx`
+    // is a ParsedInstruction, which the guards above guarantee). This guard exists
+    // to narrow its type for the switch below — TS can't relate the two useMemos.
+    if (!parsedTx) {
+        return (
+            <UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} innerCards={innerCards} />
+        );
+    }
+
+    // mpl-token-metadata / lighthouse below stay literal: dispatcher-only labels with no registry specimen (see ParserProgramLabel)
+    switch (parsedIx.program) {
+        case SYSTEM_PROGRAM_LABEL:
+            return (
+                <SystemDetailsCard
+                    key={index}
+                    ix={parsedIx}
+                    tx={parsedTx}
+                    index={index}
+                    result={INSPECTOR_RESULT}
+                    raw={ix}
+                />
+            );
+        case SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_LABEL:
+            return (
+                <AssociatedTokenDetailsCard
+                    key={index}
+                    ix={parsedIx}
+                    raw={ix}
+                    index={index}
+                    result={INSPECTOR_RESULT}
+                    InstructionCardComponent={InspectorInstructionCardComponent}
+                    AddressComponent={AddressWithContextCell}
+                    showProgramField={false}
+                />
+            );
+        case BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL:
+            return (
+                <ErrorBoundary
+                    fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
+                >
+                    <BpfUpgradeableLoaderDetailsCard
+                        key={index}
+                        ix={parsedIx}
+                        tx={parsedTx}
+                        index={index}
+                        result={INSPECTOR_RESULT}
+                        raw={ix}
+                    />
+                </ErrorBoundary>
+            );
+        case SPL_TOKEN_PROGRAM_LABEL:
+            return (
+                <ErrorBoundary
+                    fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
+                >
+                    <TokenDetailsCard
+                        key={index}
+                        ix={parsedIx}
+                        tx={parsedTx}
+                        index={index}
+                        result={INSPECTOR_RESULT}
+                        InstructionCardComponent={InspectorInstructionCardComponent}
+                        raw={ix}
+                    />
+                </ErrorBoundary>
+            );
+        case SPL_TOKEN_2022_PROGRAM_LABEL:
+            return (
+                <ErrorBoundary
+                    fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
+                >
+                    <TokenDetailsCard
+                        key={index}
+                        ix={parsedIx}
+                        tx={parsedTx}
+                        index={index}
+                        result={INSPECTOR_RESULT}
+                        InstructionCardComponent={InspectorInstructionCardComponent}
+                        raw={ix}
+                    />
+                </ErrorBoundary>
+            );
+        case 'mpl-token-metadata':
+            return (
+                <ErrorBoundary
+                    fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
+                >
+                    <MetaplexTokenMetadataDetailsCard
+                        key={index}
+                        ix={ix}
+                        parsedIx={parsedIx}
+                        index={index}
+                        result={INSPECTOR_RESULT}
+                        InstructionCardComponent={BaseInstructionCard}
+                    />
+                </ErrorBoundary>
+            );
+        case 'lighthouse':
+            return (
+                <ErrorBoundary
+                    fallback={<UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} />}
+                >
+                    <LighthouseDetailsCard key={index} ix={parsedIx} raw={ix} index={index} result={INSPECTOR_RESULT} />
+                </ErrorBoundary>
+            );
     }
 
     return <UnknownDetailsCard key={index} index={index} ix={ix} programName={programName} innerCards={innerCards} />;

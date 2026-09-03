@@ -1,15 +1,19 @@
+import { Button, type ButtonProps } from '@components/shared/ui/button';
+import { Label } from '@components/shared/ui/label';
+import { Switch } from '@components/shared/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/shared/ui/tooltip';
 import type {
     InstructionAccountData,
     InstructionData,
     NestedInstructionAccountsData,
     SupportedIdl,
 } from '@entities/idl';
-import { Button } from '@shared/ui/button';
-import { Card } from '@shared/ui/card';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@shared/ui/tooltip';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { Loader, Send } from 'react-feather';
+import { type ReactNode, useState } from 'react';
+import { Loader, Play, Send } from 'react-feather';
 import { Control, Controller, FieldPath } from 'react-hook-form';
+
+import { useWallet } from '@/app/providers/wallet/use-wallet';
+import { Card, CardSection } from '@/app/shared/ui/Card';
 
 import { createGetAutocompleteItems } from '../model/account-autocomplete/createGetAutocompleteItems';
 import type { AutocompleteItem } from '../model/account-autocomplete/types';
@@ -17,6 +21,8 @@ import { createKnownAccountsPrefillDependency } from '../model/form-prefill/prov
 import { usePdaPrefill } from '../model/form-prefill/providers/use-pda-prefill';
 import { createWalletPrefillDependency } from '../model/form-prefill/providers/wallet-prefill-provider';
 import { useFormPrefill } from '../model/form-prefill/use-form-prefill';
+import type { ExecutionOptions } from '../model/transaction/types';
+import type { InstructionStatus } from '../model/use-instruction';
 import {
     type InstructionCallParams,
     type InstructionFormData,
@@ -26,24 +32,34 @@ import { usePdas } from '../model/use-pdas';
 import { AccordionContent, AccordionItem, AccordionTrigger } from './Accordion';
 import { AccountInput } from './AccountInput';
 import { ArgumentInput } from './ArgumentInput';
+import { WarningNote } from './WarningNote';
 
+const WALLET_CONNECT_TOOLTIP = 'Connect your wallet to interact with this instruction';
+
+// FIXME: missing Storybook story — uses useWallet + react-hook-form Controllers + nested IDL fixtures.
 export function InteractInstruction({
     idl,
     instruction,
     onExecuteInstruction,
-    isExecuting,
+    onSimulateInstruction,
+    status,
 }: {
     idl: SupportedIdl | undefined;
-    onExecuteInstruction: (data: InstructionData, params: InstructionCallParams) => void;
+    onExecuteInstruction: (data: InstructionData, params: InstructionCallParams, options: ExecutionOptions) => void;
+    onSimulateInstruction: (data: InstructionData, params: InstructionCallParams) => void;
     instruction: InstructionData;
-    isExecuting: boolean;
+    status: InstructionStatus;
 }) {
-    const { connected: walletConnected, publicKey } = useWallet();
+    const { canSign, publicKey } = useWallet();
+    const [simulateBeforeExecute, setSimulateBeforeExecute] = useState(true);
 
-    const { form, onSubmit, validationRules, fieldNames } = useInstructionForm({
+    const { form, onSubmit, onSimulate, validationRules, fieldNames } = useInstructionForm({
         instruction,
+        onSimulate: params => {
+            onSimulateInstruction(instruction, params);
+        },
         onSubmit: params => {
-            onExecuteInstruction(instruction, params);
+            onExecuteInstruction(instruction, params, { simulate: simulateBeforeExecute });
         },
     });
 
@@ -60,14 +76,14 @@ export function InteractInstruction({
     });
     usePdaPrefill({ fieldNames, form, instruction, pdas });
 
-    const executeDisabled = !walletConnected || isExecuting;
+    const interactionDisabled = !canSign || status !== 'idle';
 
     return (
         <Card variant="tight">
             <AccordionItem value={instruction.name} className="">
                 <AccordionTrigger>
-                    <div className="w-full e-flex e-items-center e-justify-between">
-                        <span className="e-min-w-0 e-flex-1 e-truncate e-pr-4 e-text-left e-text-sm e-font-medium e-text-white md:e-w-[170px] [@media(min-width:992px)]:e-w-[300px]">
+                    <div className="flex w-full items-center justify-between">
+                        <span className="min-w-0 flex-1 truncate pr-4 text-left text-sm font-medium text-white md:w-[170px] [@media(min-width:992px)]:w-[300px]">
                             {instruction.name}
                         </span>
                     </div>
@@ -75,15 +91,15 @@ export function InteractInstruction({
                 <AccordionContent>
                     {/* Instruction Documentation */}
                     {instruction.docs && instruction.docs.length > 0 && (
-                        <div className="e-mb-4 e-rounded-lg e-bg-[#1a1b1d] e-p-3">
-                            <p className="e-text-xs e-text-neutral-400">{instruction.docs.join(' ')}</p>
+                        <div className="mb-4 rounded-lg bg-[#1a1b1d] p-3">
+                            <p className="text-xs text-neutral-400">{instruction.docs.join(' ')}</p>
                         </div>
                     )}
 
                     {/* Arguments Section - shown first as accounts may depend on argument values */}
                     {instruction.args.length > 0 && (
                         <CardSection title="Arguments">
-                            <div className="e-space-y-3 e-px-6">
+                            <div className="space-y-3 px-6">
                                 {instruction.args.map(arg => (
                                     <Controller
                                         key={arg.name}
@@ -111,7 +127,7 @@ export function InteractInstruction({
                     {/* Accounts Section */}
                     {instruction.accounts.length > 0 && (
                         <CardSection title="Accounts">
-                            <div className="e-space-y-3 e-px-6">
+                            <div className="space-y-3 px-6">
                                 {instruction.accounts.map(account =>
                                     'accounts' in account ? (
                                         <NestedAccountGroup
@@ -138,28 +154,54 @@ export function InteractInstruction({
                             </div>
                         </CardSection>
                     )}
-                    <div className="e-px-6 e-pb-2.5">
-                        <ExecuteButton
-                            onClick={onSubmit}
-                            disabled={executeDisabled}
-                            isExecuting={isExecuting}
-                            tooltipText="Connect your wallet to execute the instruction"
-                        />
+                    <div className="px-6 pb-2.5">
+                        <div className="flex gap-2">
+                            <ActionButton
+                                onClick={onSubmit}
+                                disabled={interactionDisabled}
+                                loading={status === 'executing'}
+                                icon={<Send size={16} />}
+                                label="Execute"
+                                variant="accent"
+                                tooltipText={!canSign ? WALLET_CONNECT_TOOLTIP : ''}
+                            />
+                            <ActionButton
+                                onClick={onSimulate}
+                                disabled={interactionDisabled}
+                                loading={status === 'simulating'}
+                                icon={<Play size={16} />}
+                                label="Simulate"
+                                variant="outline"
+                                tooltipText={!canSign ? WALLET_CONNECT_TOOLTIP : ''}
+                            />
+                        </div>
+                        <div className="mt-4 flex items-center gap-2">
+                            <Switch
+                                id={`simulate-before-execute-${instruction.name}`}
+                                data-testid="simulate-before-execute-toggle"
+                                checked={simulateBeforeExecute}
+                                onCheckedChange={setSimulateBeforeExecute}
+                                disabled={status !== 'idle'}
+                            />
+                            <Label
+                                htmlFor={`simulate-before-execute-${instruction.name}`}
+                                className="cursor-pointer text-xs text-white"
+                            >
+                                Simulate before executing
+                            </Label>
+                        </div>
+                        {!simulateBeforeExecute && (
+                            <div data-testid="simulate-skipped-warning">
+                                <WarningNote
+                                    className="mt-3"
+                                    label="Instruction simulation is skipped during execution"
+                                />
+                            </div>
+                        )}
                     </div>
                 </AccordionContent>
             </AccordionItem>
         </Card>
-    );
-}
-
-function CardSection({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <div className="e-mb-6">
-            <h3 className="e-border e-border-neutral-800 e-bg-neutral-900 e-px-6 e-py-4 e-text-[10px] e-font-medium e-uppercase e-tracking-widest e-text-gray-400">
-                {title}
-            </h3>
-            {children}
-        </div>
     );
 }
 
@@ -214,9 +256,9 @@ function NestedAccountGroup({
     seeds: { name: string }[];
 }) {
     return (
-        <div className="e-space-y-3">
-            <h4 className="e-text-sm e-font-medium e-text-gray-400">{group.name}</h4>
-            <div className="e-ml-4 e-space-y-3 e-rounded-lg e-border e-border-neutral-800 e-bg-neutral-900/50 e-p-3">
+        <div className="space-y-3">
+            <h4 className="text-sm font-medium text-gray-400">{group.name}</h4>
+            <div className="ml-4 space-y-3 rounded-lg border border-neutral-800 bg-neutral-900/50 p-3">
                 {group.accounts.map(nestedAccount => (
                     <AccountController
                         key={nestedAccount.name}
@@ -233,35 +275,41 @@ function NestedAccountGroup({
     );
 }
 
-function ExecuteButton({
+function ActionButton({
     onClick,
     disabled,
-    isExecuting,
+    loading,
+    icon,
+    label,
+    variant,
     tooltipText,
 }: {
     onClick: () => void;
     disabled: boolean;
-    isExecuting: boolean;
+    loading: boolean;
+    icon: ReactNode;
+    label: string;
+    variant: ButtonProps['variant'];
     tooltipText?: string;
 }) {
     const button = (
-        <Button variant="accent" size="sm" onClick={onClick} disabled={disabled}>
-            {isExecuting ? <Loader size={16} className="e-animate-spin" /> : <Send size={16} />}
-            Execute
+        <Button variant={variant} size="sm" onClick={onClick} disabled={disabled}>
+            {loading ? <Loader size={16} className="animate-spin" /> : icon}
+            {label}
         </Button>
     );
 
-    if (!disabled || !tooltipText) {
+    if (!tooltipText) {
         return button;
     }
 
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <div className="e-w-fit">{button}</div>
+                <div className="w-fit">{button}</div>
             </TooltipTrigger>
             <TooltipContent>
-                <div className="e-min-w-36 e-max-w-16">{tooltipText}</div>
+                <div className="min-w-36 max-w-16">{tooltipText}</div>
             </TooltipContent>
         </Tooltip>
     );

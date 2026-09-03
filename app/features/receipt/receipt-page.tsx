@@ -8,7 +8,6 @@ import { FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
 import { useFetchTransactionStatus, useTransactionDetails, useTransactionStatus } from '@providers/transactions';
 import { useFetchTransactionDetails } from '@providers/transactions/parsed';
-import { NATIVE_MINT } from '@solana/spl-token';
 import { TransactionSignature } from '@solana/web3.js';
 import { Cluster, clusterName, ClusterStatus } from '@utils/cluster';
 import { useClusterPath } from '@utils/url';
@@ -16,18 +15,18 @@ import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 
+import { formatUsdValue, PriceStatus, USD_FALLBACK, useTokenPrice } from '@/app/entities/token-price';
 import { getReceiptAmount, getReceiptMint } from '@/app/entities/token-receipt';
 import { getProxiedUri } from '@/app/features/metadata';
 import { receiptAnalytics } from '@/app/shared/lib/analytics';
 import { Logger } from '@/app/shared/lib/logger';
-import { AUTO_REFRESH_INTERVAL, AutoRefresh, type AutoRefreshProps } from '@/app/tx/[signature]/page-client';
+import { AutoRefresh, useAutoRefreshInterval, type WithAutoRefreshProp } from '@/app/shared/lib/use-auto-refresh';
+import { NATIVE_MINT_ADDRESS } from '@/app/shared/model/token-program';
 
 import { generateReceiptCsv } from './lib/generate-receipt-csv';
 import { generateReceiptPdf, loadPdfDeps } from './lib/generate-receipt-pdf';
-import { formatUsdValue, USD_FALLBACK } from './lib/parse-usd';
 import { usePrimaryDomain } from './lib/use-primary-domain';
 import { extractReceiptData, type ReceiptUnavailabilityReason } from './model/create-receipt';
-import { PriceStatus, useTokenPrice } from './model/use-price';
 import type { FormattedReceipt } from './types';
 import { NoReceipt } from './ui/BaseReceipt';
 import { ReceiptView } from './ui/ReceiptView';
@@ -36,7 +35,7 @@ interface ReceiptProps {
     signature: TransactionSignature;
 }
 
-export function Receipt({ signature, autoRefresh }: ReceiptProps & AutoRefreshProps) {
+export function Receipt({ signature, autoRefresh }: ReceiptProps & WithAutoRefreshProp) {
     const fetchStatus = useFetchTransactionStatus();
     const fetchDetails = useFetchTransactionDetails();
     const status = useTransactionStatus(signature);
@@ -64,15 +63,8 @@ export function Receipt({ signature, autoRefresh }: ReceiptProps & AutoRefreshPr
         }
     }, [signature, clusterStatus, status, fetchDetails, details]); // eslint-disable-line react-hooks/exhaustive-deps -- fetchStatus is intentionally omitted to prevent re-fetch loops
 
-    useEffect(() => {
-        if (autoRefresh === AutoRefresh.Active) {
-            const intervalHandle: NodeJS.Timeout = setInterval(() => fetchStatus(signature), AUTO_REFRESH_INTERVAL);
-
-            return () => {
-                clearInterval(intervalHandle);
-            };
-        }
-    }, [autoRefresh, fetchStatus, signature]);
+    const onRefresh = useCallback(() => fetchStatus(signature), [fetchStatus, signature]);
+    useAutoRefreshInterval(autoRefresh, onRefresh);
 
     const isStatusLoading = !status || (status.status === FetchStatus.Fetching && autoRefresh === AutoRefresh.Inactive);
     const isStatusFailed = status?.status === FetchStatus.FetchFailed;
@@ -132,7 +124,10 @@ function messageForReason(reason: ReceiptUnavailabilityReason | undefined): stri
     switch (reason) {
         case 'mixed-mint':
             return 'Receipts are only available when all token transfers in a transaction use the same mint. This transaction transfers multiple different tokens.';
+        case 'inner-transfers':
+            return 'Receipts are only available for simple transfers. This transaction contains inner program instructions.';
         case 'no-transfers':
+            return 'No transfer instructions found. Receipts are only available for SOL and token transfers.';
         case undefined:
             return undefined;
     }
@@ -152,10 +147,11 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
         receiptAnalytics.trackViewed(signature, receiptType);
     }, [signature, receiptType]);
 
-    const { cluster, customUrl } = useCluster();
+    // The selection goes in whole. It is memoised, so this callback stays stable while it does.
+    const { cluster, selection } = useCluster();
     const makeAddressHref = useCallback(
-        (address: string) => buildExplorerLink(cluster, customUrl, `/address/${address}`),
-        [cluster, customUrl],
+        (address: string) => buildExplorerLink(selection, `/address/${address}`),
+        [selection],
     );
 
     const senderDomain = usePrimaryDomain(receipt.sender.address);
@@ -166,7 +162,7 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
     const tokenLink = useExplorerLink(receiptMint ? `/address/${receiptMint}` : '');
     const logoURI = receipt.logoURI ? getProxiedUri(receipt.logoURI) : undefined;
 
-    const priceResult = useTokenPrice(receiptMint ?? NATIVE_MINT.toBase58());
+    const priceResult = useTokenPrice(receiptMint ?? NATIVE_MINT_ADDRESS);
     const isPriceLoading = priceResult?.status === PriceStatus.Loading;
     const amount = getReceiptAmount(receipt);
     const usdValue = priceResult?.price != null ? formatUsdValue(amount, priceResult.price, USD_FALLBACK) : undefined;

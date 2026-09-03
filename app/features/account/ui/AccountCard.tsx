@@ -2,9 +2,10 @@ import { TableCardBodyProps } from '@components/common/TableCardBody';
 import { useRawAccountDataOnMount } from '@entities/account';
 import type { Account } from '@providers/accounts';
 
+import { BaseAccountCard } from '@/app/shared/ui/BaseAccountCard';
+import { BaseRawAccountRows } from '@/app/shared/ui/BaseRawAccountRows';
+
 import { AccountDownloadDropdown } from './AccountDownloadDropdown';
-import { BaseAccountCard } from './BaseAccountCard';
-import { BaseRawAccountRows } from './BaseRawAccountRows';
 
 type AccountCardProps = TableCardBodyProps & {
     title: React.ReactNode;
@@ -14,6 +15,7 @@ type AccountCardProps = TableCardBodyProps & {
     analyticsSection?: string;
 };
 
+// FIXME: missing Storybook story — RawAccountRows uses useRawAccountDataOnMount (SWR); visuals already covered by BaseAccountCard + RawAccountRows stories.
 export function AccountCard({ account, children, ...rest }: AccountCardProps) {
     return (
         <BaseAccountCard

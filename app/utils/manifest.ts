@@ -1,12 +1,14 @@
 import { keccak_256 } from '@noble/hashes/sha3';
+import { getBase58Encoder } from '@solana/kit';
 import { PublicKey } from '@solana/web3.js';
-import bs58 from 'bs58';
 
 import { fromBase64 } from '@/app/shared/lib/bytes';
 
 export const MANIFEST_PROGRAM_ID = 'MNFSTqtC93rEfYHB6hF82sKdZpUDFWkViLByLd1k1Ms';
 export const MANIFEST_WRAPPER_PROGRAM_ID = 'wMNFSTkir3HgyZTsB7uqu3i7FA73grFCptPXgrZjksL';
 export const MANIFEST_UI_WRAPPER_PROGRAM_ID = 'UMnFStVeG1ecZFc2gc5K3vFy3sMpotq8C91mXBQDGwh';
+
+const BASE58_ENCODER = getBase58Encoder();
 
 export type ManifestDecodedField = {
     label: string;
@@ -468,7 +470,13 @@ const UI_WRAPPER_PLACE_ORDER_ACCOUNTS = [
 ] as const;
 
 const UI_WRAPPER_INSTRUCTION_LAYOUTS: readonly InstructionLayout[] = [
-    instructionLayout(0, 'CreateWrapper', ['owner', 'systemProgram', 'payer', 'wrapperState'], undefined, 'Manifest UI Wrapper'),
+    instructionLayout(
+        0,
+        'CreateWrapper',
+        ['owner', 'systemProgram', 'payer', 'wrapperState'],
+        undefined,
+        'Manifest UI Wrapper',
+    ),
     instructionLayout(
         1,
         'ClaimSeatUnused',
@@ -544,7 +552,9 @@ export function isManifestProgramId(programId: PublicKey | string): boolean {
 }
 
 export function isManifestWrapperProgramId(programId: PublicKey | string): boolean {
-    return programId.toString() === MANIFEST_WRAPPER_PROGRAM_ID || programId.toString() === MANIFEST_UI_WRAPPER_PROGRAM_ID;
+    return (
+        programId.toString() === MANIFEST_WRAPPER_PROGRAM_ID || programId.toString() === MANIFEST_UI_WRAPPER_PROGRAM_ID
+    );
 }
 
 export function decodeManifestAccount(data: Uint8Array): ManifestDecodedAccount | undefined {
@@ -615,7 +625,7 @@ function decodeInstruction(
 }
 
 export function genManifestAccountDiscriminator(accountName: string): Uint8Array {
-    const programBytes = bs58.decode(MANIFEST_PROGRAM_ID);
+    const programBytes = BASE58_ENCODER.encode(MANIFEST_PROGRAM_ID);
     const accountNameBytes = new TextEncoder().encode(accountName);
     const input = new Uint8Array(programBytes.length + accountNameBytes.length);
     input.set(programBytes, 0);
@@ -629,7 +639,11 @@ function parseFields(data: Uint8Array, layout: AccountLayout): ManifestDecodedFi
     return parseFieldsWithReader(reader, layout.layout);
 }
 
-function parseFieldsWithReader(reader: Reader, layout: readonly LayoutDescriptor[], prefix = ''): ManifestDecodedField[] {
+function parseFieldsWithReader(
+    reader: Reader,
+    layout: readonly LayoutDescriptor[],
+    prefix = '',
+): ManifestDecodedField[] {
     const fields: ManifestDecodedField[] = [];
 
     for (const descriptor of layout) {
@@ -710,9 +724,7 @@ function decodeAmountWithTraderHintArgs(reader: Reader): ManifestDecodedField[] 
 
     if (reader.remaining() > 0) {
         fields.push(
-            ...parseFieldsWithReader(reader, [
-                field('traderIndexHint', 'coptionU32', 'Instruction Trader Index Hint'),
-            ]),
+            ...parseFieldsWithReader(reader, [field('traderIndexHint', 'coptionU32', 'Instruction Trader Index Hint')]),
         );
     }
 

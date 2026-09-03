@@ -11,30 +11,30 @@ vi.mock('../page-client', () => ({
 }));
 
 describe('MetaplexFilesPage', () => {
-    it('should renders the page with correct props', () => {
+    it('should render the page with correct props', async () => {
         const props = {
-            params: {
+            params: Promise.resolve({
                 address: 'DemoKeypair1111111111111111111111111111111111',
-            },
+            }),
         };
 
-        render(<MetaplexFilesPage {...props} />);
+        render(await MetaplexFilesPage(props));
 
         expect(screen.getByTestId('metaplex-files-page-client')).toBeInTheDocument();
         expect(
-            screen.getByText('Metaplex Files for address: DemoKeypair1111111111111111111111111111111111')
+            screen.getByText('Metaplex Files for address: DemoKeypair1111111111111111111111111111111111'),
         ).toBeInTheDocument();
     });
 
-    it('should passes address parameter correctly', () => {
+    it('should pass the address parameter correctly', async () => {
         const testAddress = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
         const props = {
-            params: {
+            params: Promise.resolve({
                 address: testAddress,
-            },
+            }),
         };
 
-        render(<MetaplexFilesPage {...props} />);
+        render(await MetaplexFilesPage(props));
 
         expect(screen.getByText(`Metaplex Files for address: ${testAddress}`)).toBeInTheDocument();
     });

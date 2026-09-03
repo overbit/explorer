@@ -5,7 +5,13 @@ cache/
 coverage/
 node_modules/
 dist/
+packages/entity-inspector/
 build/
 .pnpm-store/
 .claude/
 .worktrees/
+storybook-static/
+storybook-static-*/
+public/mockServiceWorker.js
+packages/idl-decode/
+packages/parsers/

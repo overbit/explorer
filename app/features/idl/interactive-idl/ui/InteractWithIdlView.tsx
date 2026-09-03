@@ -1,33 +1,46 @@
-import { getIdlSpec, getIdlStandard, getIdlVersion, type InstructionData, type SupportedIdl } from '@entities/idl';
+import { type InstructionData, type SupportedIdl } from '@entities/idl';
 import { useState } from 'react';
 
 import { Label } from '@/app/components/shared/ui/label';
 import { Switch } from '@/app/components/shared/ui/switch';
-import type { InstructionLogs } from '@/app/utils/program-logs';
 
-import type { InstructionInvocationResult } from '../model/use-instruction';
+import type {
+    ExecutionOptions,
+    InstructionExecutionResult,
+    InstructionSimulationResult,
+} from '../model/transaction/types';
+import type { InstructionStatus } from '../model/use-instruction';
 import type { InstructionCallParams } from '../model/use-instruction-form';
 import { ClusterSelector } from './ClusterSelector';
 import { ConnectWallet } from './ConnectWallet';
-import { InstructionActivity } from './InstructionActivity';
+import { InstructionExecutionActivity, InstructionSimulationActivity } from './InstructionActivity';
 import { InteractInstructions } from './InteractInstructions';
 
+// FIXME: missing Storybook story — composes ConnectWallet + ClusterSelector + InteractInstructions; inherits wallet/cluster provider need.
 export function InteractWithIdlView({
     instructions,
     idl,
     onExecuteInstruction,
+    onSimulateInstruction,
     onSectionsExpanded,
-    parseLogs,
-    isExecuting,
-    lastResult,
+    status,
+    lastExecutionResult,
+    lastSimulationResult,
+    lastAction,
 }: {
     instructions: InstructionData[];
     idl: SupportedIdl | undefined;
-    onExecuteInstruction: (data: InstructionData, params: InstructionCallParams) => Promise<void>;
+    onExecuteInstruction: (
+        data: InstructionData,
+        params: InstructionCallParams,
+        options: ExecutionOptions,
+    ) => Promise<void>;
+    onSimulateInstruction: (data: InstructionData, params: InstructionCallParams) => Promise<void>;
     onSectionsExpanded?: (expandedSections: string[], programId?: string) => void;
-    parseLogs: (logs: string[]) => InstructionLogs[];
-    isExecuting?: boolean;
-    lastResult: InstructionInvocationResult;
+    status?: InstructionStatus;
+    lastExecutionResult: InstructionExecutionResult | undefined;
+    lastSimulationResult: InstructionSimulationResult | undefined;
+    lastAction: 'execute' | 'simulate' | null;
 }) {
     const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
@@ -44,51 +57,46 @@ export function InteractWithIdlView({
     };
 
     return (
-        <div className="e-container e-mx-auto e-px-4">
+        <div className="container mx-auto px-4">
             {/* Main Grid Layout - responsive */}
-            <div className="e-grid e-gap-6 md:e-grid-cols-12">
-                {/* Interact Header */}
-                <div className="e-flex e-items-center e-justify-between md:e-col-span-12">
-                    {idl && (
-                        <p className="e-mb-0 e-text-sm e-text-neutral-400">
-                            {getIdlStandard(idl)}: {getIdlVersion(idl)}
-                            {getIdlSpec(idl) ? ` (spec: ${getIdlSpec(idl)})` : ''}
-                        </p>
-                    )}
-                    <div className="e-flex e-items-center e-gap-3">
+            <div className="grid gap-6 md:grid-cols-12">
+                {/* Interact Header — the IDL standard / version label now lives in the card's badge. */}
+                <div className="flex items-center justify-end md:col-span-12">
+                    <div className="flex items-center gap-3">
                         <Switch id="expand-all" checked={areAllExpanded} onCheckedChange={handleExpandAllToggle} />
-                        <Label htmlFor="expand-all" className="e-cursor-pointer e-text-xs e-text-white">
+                        <Label htmlFor="expand-all" className="cursor-pointer text-xs text-white">
                             Expand all
                         </Label>
                     </div>
                 </div>
 
                 {/* Left Column - Instructions */}
-                <div className="e-order-2 md:e-order-1 md:e-col-span-6">
+                <div className="order-2 min-w-0 md:order-1 md:col-span-6">
                     <InteractInstructions
                         idl={idl}
                         instructions={instructions}
                         expandedSections={expandedSections}
                         setExpandedSections={setExpandedSections}
                         onExecuteInstruction={onExecuteInstruction}
+                        onSimulateInstruction={onSimulateInstruction}
                         onSectionsExpanded={onSectionsExpanded}
-                        isExecuting={isExecuting}
+                        status={status}
                     />
                 </div>
 
                 {/* Right Column - Controls & Logs */}
-                <div className="e-order-1 e-h-full md:e-order-2 md:e-col-span-6">
-                    <div className="e-top-4 md:e-sticky">
-                        <div className="e-flex e-flex-col e-gap-y-4">
+                <div className="order-1 h-full min-w-0 md:order-2 md:col-span-6">
+                    <div className="top-4 md:sticky">
+                        <div className="flex flex-col gap-y-4">
                             <ClusterSelector />
 
                             <ConnectWallet />
 
-                            <InstructionActivity
-                                lastResult={lastResult}
-                                logs={lastResult?.logs ?? []}
-                                parseLogs={parseLogs}
-                            />
+                            {lastAction === 'simulate' ? (
+                                <InstructionSimulationActivity lastSimulation={lastSimulationResult} />
+                            ) : (
+                                <InstructionExecutionActivity lastResult={lastExecutionResult} />
+                            )}
                         </div>
                     </div>
                 </div>

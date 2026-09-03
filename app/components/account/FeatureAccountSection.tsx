@@ -1,19 +1,22 @@
 import { Address } from '@components/common/Address';
 import { Slot } from '@components/common/Slot';
+import { type FeatureInfoType, getFeatureInfo } from '@entities/feature-gate';
+import { useSlotTime } from '@entities/slot-time';
 import { AccountCard } from '@features/account';
 import { Account } from '@providers/accounts';
 import { PublicKey } from '@solana/web3.js';
 import { parseFeatureAccount, useFeatureAccount } from '@utils/parseFeatureAccount';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { ExternalLink as ExternalLinkIcon } from 'react-feather';
 
-import { ClusterInfo, useCluster } from '@/app/providers/cluster';
+import { Badge } from '@/app/components/shared/ui/badge';
+import { ExternalLink } from '@/app/components/shared/ui/external-link';
+import { ClusterInfo, useCluster, useClusterInfo } from '@/app/providers/cluster';
+import { BaseTable } from '@/app/shared/ui/Table';
 import { Cluster, clusterName } from '@/app/utils/cluster';
 import { getEpochForSlot } from '@/app/utils/epoch-schedule';
-import { FeatureInfoType } from '@/app/utils/feature-gate/types';
-import { getFeatureInfo } from '@/app/utils/feature-gate/utils';
 
 import { UnknownAccountCard } from './UnknownAccountCard';
 
@@ -51,6 +54,7 @@ type Props = Readonly<{
 const FeatureCard = ({ account }: Props) => {
     const feature = parseFeatureAccount(account);
     const featureInfo = useMemo(() => getFeatureInfo(feature.address), [feature.address]);
+    const isPending = feature.activatedAt === null;
 
     return (
         <BaseFeatureCard
@@ -58,6 +62,7 @@ const FeatureCard = ({ account }: Props) => {
             address={feature.address}
             activatedAt={feature.activatedAt}
             featureInfo={featureInfo}
+            isPending={isPending}
         />
     );
 };
@@ -67,85 +72,93 @@ const BaseFeatureCard = ({
     activatedAt,
     address,
     featureInfo,
-}: ReturnType<typeof parseFeatureAccount> & { account: Account; featureInfo?: FeatureInfoType }) => {
-    const { cluster, clusterInfo } = useCluster();
+    isPending = false,
+}: ReturnType<typeof parseFeatureAccount> & {
+    account: Account;
+    featureInfo?: FeatureInfoType;
+    isPending?: boolean;
+}) => {
+    const { cluster } = useCluster();
+    const clusterInfo = useClusterInfo();
 
     let activatedAtSlot;
     let simdLink;
     if (activatedAt) {
         activatedAtSlot = (
-            <tr>
-                <td className="text-nowrap">Activated At Slot</td>
-                <td className="text-lg-end">
+            <BaseTable.Row>
+                <BaseTable.Cell className="whitespace-nowrap">Activated At Slot</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">
                     <Slot slot={activatedAt} link />
-                </td>
-            </tr>
+                </BaseTable.Cell>
+            </BaseTable.Row>
         );
     }
     if (featureInfo) {
         simdLink = (
-            <tr>
-                <td>SIMDs</td>
-                <td className="text-lg-end">
+            <BaseTable.Row>
+                <BaseTable.Cell>SIMDs</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">
                     {featureInfo.simds.map((simd, index) => (
                         <div key={index}>
                             {simd && featureInfo.simd_link[index] ? (
-                                <a
-                                    href={featureInfo.simd_link[index]}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className=""
-                                >
+                                <ExternalLink href={featureInfo.simd_link[index]}>
                                     SIMD {simd} <ExternalLinkIcon className="align-text-top" size={13} />
-                                </a>
+                                </ExternalLink>
                             ) : (
                                 <code>No link</code>
                             )}
                         </div>
                     ))}
-                </td>
-            </tr>
+                </BaseTable.Cell>
+            </BaseTable.Row>
         );
     }
 
     return (
         <AccountCard title={featureInfo?.title ?? 'Feature Activation'} account={account} layout="expanded">
-            <tr>
-                <td>Address</td>
-                <td>
+            <BaseTable.Row>
+                <BaseTable.Cell>Address</BaseTable.Cell>
+                <BaseTable.Cell>
                     <Address pubkey={new PublicKey(address)} alignRight raw />
-                </td>
-            </tr>
+                </BaseTable.Cell>
+            </BaseTable.Row>
 
-            <tr>
-                <td className="text-nowrap">Activated?</td>
-                <td className="text-lg-end">
+            <BaseTable.Row>
+                <BaseTable.Cell className="whitespace-nowrap">Activated?</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">
                     {activatedAt !== null ? (
-                        <span className="badge bg-success">Active on {clusterName(cluster)}</span>
+                        <Badge ui="dashkit" variant="success" tone="solid">
+                            Active on {clusterName(cluster)}
+                        </Badge>
+                    ) : isPending ? (
+                        <Badge ui="dashkit" variant="warning" tone="solid">
+                            Pending activation on {clusterName(cluster)}
+                        </Badge>
                     ) : (
                         <code>Not yet activated on {clusterName(cluster)}</code>
                     )}
-                </td>
-            </tr>
+                </BaseTable.Cell>
+            </BaseTable.Row>
 
             {activatedAtSlot}
 
-            <tr>
-                <td className="text-nowrap">Cluster Activation</td>
-                <td className="text-lg-end">
+            <BaseTable.Row>
+                <BaseTable.Cell className="whitespace-nowrap">Cluster Activation</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">
                     <ClusterActivationEpochAtCluster
                         cluster={cluster}
                         clusterInfo={clusterInfo}
                         activatedAt={activatedAt}
+                        isPending={isPending}
                     />
-                </td>
-            </tr>
+                </BaseTable.Cell>
+            </BaseTable.Row>
 
             {featureInfo?.description && (
-                <tr>
-                    <td>Description</td>
-                    <td className="text-lg-end">{featureInfo?.description}</td>
-                </tr>
+                <BaseTable.Row>
+                    <BaseTable.Cell>Description</BaseTable.Cell>
+                    <BaseTable.Cell className="text-right">{featureInfo?.description}</BaseTable.Cell>
+                </BaseTable.Row>
             )}
 
             {simdLink}
@@ -153,24 +166,91 @@ const BaseFeatureCard = ({
     );
 };
 
+function formatCountdown(totalSeconds: number): string {
+    if (totalSeconds <= 0) return 'any moment now';
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const parts: string[] = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (parts.length === 0 || seconds > 0) parts.push(`${seconds}s`);
+    return `~${parts.join(' ')}`;
+}
+
+function EpochCountdown({ remainingSlots, msPerSlot }: { remainingSlots: bigint; msPerSlot: number }) {
+    const estimatedSeconds = Math.ceil((Number(remainingSlots) * msPerSlot) / 1000);
+    const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+
+    useEffect(() => {
+        const target = Date.now() + estimatedSeconds * 1000;
+        const tick = () => setSecondsLeft(Math.max(0, Math.ceil((target - Date.now()) / 1000)));
+        tick();
+        const timer = setInterval(tick, 1000);
+        return () => clearInterval(timer);
+    }, [estimatedSeconds]);
+
+    if (secondsLeft === null) return null;
+
+    const label = formatCountdown(secondsLeft);
+
+    return (
+        <span className="text-dk-warning-on-dark" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {secondsLeft > 0 ? `${label} remaining` : label}
+        </span>
+    );
+}
+
+/**
+ * Owns the slot-time request, so it is made where the countdown is about to render. Only a pending
+ * feature has one, and a custom cluster never gets this far — asking higher up would put a request on
+ * every feature account page, and on a custom cluster it would reach the visitor's own node for nothing.
+ */
+function PendingEpochCountdown({ remainingSlots }: { remainingSlots: bigint }) {
+    const msPerSlot = useSlotTime();
+    if (msPerSlot === undefined) return null;
+
+    return (
+        <div className="mt-[3px]">
+            <EpochCountdown remainingSlots={remainingSlots} msPerSlot={msPerSlot} />
+        </div>
+    );
+}
+
 function ClusterActivationEpochAtCluster({
     cluster,
     clusterInfo,
     activatedAt,
+    isPending = false,
 }: {
     cluster: Cluster;
     clusterInfo: ClusterInfo | undefined;
     activatedAt: number | null;
+    isPending?: boolean;
 }) {
     if (cluster === Cluster.Custom) return null;
 
     if (activatedAt !== null && clusterInfo?.epochSchedule) {
-        const epoch = getEpochForSlot(clusterInfo?.epochSchedule, BigInt(activatedAt));
+        const epoch = getEpochForSlot(clusterInfo.epochSchedule, BigInt(activatedAt));
         return (
-            <Link href={`/epoch/${epoch}?cluster=${cluster}`} className="epoch-link">
+            <Link href={`/epoch/${epoch}?cluster=${cluster}`}>
                 {clusterName(cluster)} Epoch {epoch.toString()}
             </Link>
         );
     }
+
+    if (isPending && clusterInfo?.epochInfo) {
+        const nextEpoch = clusterInfo.epochInfo.epoch + 1n;
+        const remainingSlots = clusterInfo.epochInfo.slotsInEpoch - clusterInfo.epochInfo.slotIndex;
+        return (
+            <div>
+                <Link href={`/epoch/${nextEpoch}?cluster=${cluster}`}>
+                    {clusterName(cluster)} Epoch {nextEpoch.toString()}
+                </Link>
+                <PendingEpochCountdown remainingSlots={remainingSlots} />
+            </div>
+        );
+    }
+
     return <code>No Activation Epoch</code>;
 }

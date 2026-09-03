@@ -1,22 +1,42 @@
 'use client';
 
+import { getRpc, type SolanaRpc } from '@entities/cluster';
 import { fetchNftData } from '@entities/nft';
-import { getStakeActivation, StakeAccount } from '@features/stake';
+import {
+    ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL,
+    BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL,
+    CONFIG_PROGRAM_LABEL,
+    isParsedAccountProgram,
+    isTokenProgram,
+    NONCE_PROGRAM_LABEL,
+    SPL_TOKEN_2022_PROGRAM_LABEL,
+    SPL_TOKEN_PROGRAM_LABEL,
+    STAKE_PROGRAM_LABEL,
+    SYSVAR_PROGRAM_LABEL,
+    type TokenProgram,
+    VOTE_PROGRAM_LABEL,
+} from '@explorer/parsers';
+// deep imports on purpose: the barrel also re-exports the stake instruction cards, which import the
+// instruction-card entity — and that reaches back here, closing an import cycle
+import { getStakeActivation } from '@features/stake/api/stake-activation';
+import { StakeAccount } from '@features/stake/lib/validators';
+// deep imports on purpose: this provider only needs the history provider and read hook,
+// not the transaction-history UI that the feature barrel re-exports
+import { HistoryProvider } from '@features/transaction-history/model/history-provider';
+import { VoteAccount } from '@features/vote/lib/validators'; // deep import on purpose: this provider only needs the account schema, not the vote UI the barrel re-exports
 import * as Cache from '@providers/cache';
 import { ActionType, FetchStatus } from '@providers/cache';
+import { useCacheEntries, useCacheEntry } from '@providers/cache-entry';
 import { useCluster } from '@providers/cluster';
-import { createSolanaRpc } from '@solana/kit';
+import type { AccountInfoWithJsonData } from '@solana/kit';
 import {
     AddressLookupTableAccount,
     AddressLookupTableProgram,
-    Connection,
-    ParsedAccountData,
     PublicKey,
     StakeActivationData,
     SystemProgram,
 } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
-import { assertIsTokenProgram, TokenProgram } from '@utils/programs';
 import { ParsedAddressLookupTableAccount } from '@validators/accounts/address-lookup-table';
 import { ConfigAccount } from '@validators/accounts/config';
 import { NonceAccount } from '@validators/accounts/nonce';
@@ -27,45 +47,40 @@ import {
     ProgramDataAccountInfo,
     UpgradeableLoaderAccount,
 } from '@validators/accounts/upgradeable-program';
-import { VoteAccount } from '@validators/accounts/vote';
 import { ParsedInfo } from '@validators/index';
 import React from 'react';
 import { create } from 'superstruct';
 
-import { alloc } from '@/app/shared/lib/bytes';
+import { withNumbersInsteadOfBigInts } from '@/app/shared/lib/bigint-to-number';
+import { alloc, fromBase64 } from '@/app/shared/lib/bytes';
 import { Logger } from '@/app/shared/lib/logger';
+import { toKitAddress, toLegacyPublicKey } from '@/app/shared/lib/web3js-compat';
 
-import { HistoryProvider } from './history';
 import { RewardsProvider } from './rewards';
 import { TokensProvider } from './tokens';
-export { useAccountHistory } from './history';
+export { useAccountHistory } from '@features/transaction-history/model/use-account-history';
 
 export type StakeProgramData = {
-    program: 'stake';
+    program: typeof STAKE_PROGRAM_LABEL; // 'stake'
     parsed: StakeAccount;
     activation?: StakeActivationData;
 };
 
 export type UpgradeableLoaderAccountData = {
-    program: 'bpf-upgradeable-loader';
+    program: typeof BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL; // 'bpf-upgradeable-loader'
     parsed: UpgradeableLoaderAccount;
     programData?: ProgramDataAccountInfo;
 };
 
 export function isUpgradeableLoaderAccountData(data: { program: string }): data is UpgradeableLoaderAccountData {
-    return data.program === 'bpf-upgradeable-loader';
+    return isParsedAccountProgram(data, BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL);
 }
 
 import type { NFTData } from '@entities/nft';
 export type { EditionInfo, NFTData } from '@entities/nft';
 
 export function isTokenProgramData(data: { program: string }): data is TokenProgramData {
-    try {
-        assertIsTokenProgram(data.program);
-        return true;
-    } catch (_e) {
-        return false;
-    }
+    return isTokenProgram(data.program);
 }
 export type TokenProgramData = {
     program: TokenProgram;
@@ -74,27 +89,27 @@ export type TokenProgramData = {
 };
 
 export type VoteProgramData = {
-    program: 'vote';
+    program: typeof VOTE_PROGRAM_LABEL; // 'vote'
     parsed: VoteAccount;
 };
 
 export type NonceProgramData = {
-    program: 'nonce';
+    program: typeof NONCE_PROGRAM_LABEL; // 'nonce'
     parsed: NonceAccount;
 };
 
 export type SysvarProgramData = {
-    program: 'sysvar';
+    program: typeof SYSVAR_PROGRAM_LABEL; // 'sysvar'
     parsed: SysvarAccount;
 };
 
 export type ConfigProgramData = {
-    program: 'config';
+    program: typeof CONFIG_PROGRAM_LABEL; // 'config'
     parsed: ConfigAccount;
 };
 
 export type AddressLookupTableProgramData = {
-    program: 'address-lookup-table';
+    program: typeof ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL; // 'address-lookup-table'
     parsed: ParsedAddressLookupTableAccount;
 };
 
@@ -141,9 +156,9 @@ class MultipleAccountFetcher {
 
     constructor(
         private dispatch: Dispatch,
-        private cluster: Cluster,
         private url: string,
         private dataMode: FetchAccountDataMode,
+        private onError: (error: unknown) => void,
     ) {}
     fetch = (pubkey: PublicKey) => {
         if (this.pubkeys !== undefined) this.pubkeys.add(pubkey.toBase58());
@@ -154,11 +169,15 @@ class MultipleAccountFetcher {
                     const pubkeys = Array.from(this.pubkeys).map(p => new PublicKey(p));
                     this.pubkeys.clear();
 
-                    const { dispatch, cluster, url, dataMode } = this;
-                    fetchMultipleAccounts({ cluster, dataMode, dispatch, pubkeys, url });
+                    const { dispatch, url, dataMode, onError } = this;
+                    fetchMultipleAccounts({ dataMode, dispatch, onError, pubkeys, url });
                 }
             }, 100);
         }
+    };
+    cancel = () => {
+        clearTimeout(this.fetchTimeout);
+        this.fetchTimeout = undefined;
     };
 }
 
@@ -168,21 +187,45 @@ type AccountsProviderProps = { children: React.ReactNode };
 export function AccountsProvider({ children }: AccountsProviderProps) {
     const { cluster, url } = useCluster();
     const [state, dispatch] = Cache.useReducer<Account>(url);
-    const [fetchers, setFetchers] = React.useState<Fetchers>(() => ({
-        parsed: new MultipleAccountFetcher(dispatch, cluster, url, 'parsed'),
-        raw: new MultipleAccountFetcher(dispatch, cluster, url, 'raw'),
-        skip: new MultipleAccountFetcher(dispatch, cluster, url, 'skip'),
-    }));
 
-    // Clear accounts cache whenever cluster is changed
+    // A saved custom endpoint can resolve to the same url as a preset cluster, so `cluster` must not take part
+    // in the fetcher identity below: rebuilding the fetchers cancels batches already in flight, and switching
+    // between two selections that share one endpoint changes nothing a batch depends on. The cluster only
+    // decides whether a failure is ours to report, so the reporter reads the current one through a ref.
+    const clusterRef = React.useRef(cluster);
+    clusterRef.current = cluster;
+
+    const reportFetchError = React.useCallback(
+        (error: unknown) => {
+            // A custom endpoint fails for reasons we do not control, so its failures are not ours to report.
+            if (clusterRef.current !== Cluster.Custom) {
+                Logger.error(error, { url });
+            }
+        },
+        [url],
+    );
+
+    const fetchers = React.useMemo<Fetchers>(
+        () => ({
+            parsed: new MultipleAccountFetcher(dispatch, url, 'parsed', reportFetchError),
+            raw: new MultipleAccountFetcher(dispatch, url, 'raw', reportFetchError),
+            skip: new MultipleAccountFetcher(dispatch, url, 'skip', reportFetchError),
+        }),
+        [dispatch, url, reportFetchError],
+    );
+
     React.useEffect(() => {
         dispatch({ type: ActionType.Clear, url });
-        setFetchers({
-            parsed: new MultipleAccountFetcher(dispatch, cluster, url, 'parsed'),
-            raw: new MultipleAccountFetcher(dispatch, cluster, url, 'raw'),
-            skip: new MultipleAccountFetcher(dispatch, cluster, url, 'skip'),
-        });
-    }, [dispatch, cluster, url]);
+    }, [dispatch, url]);
+
+    // Cancel pending timers on deps-change and unmount so a debounced batch can't fire into a stale tree.
+    React.useEffect(() => {
+        return () => {
+            fetchers.parsed.cancel();
+            fetchers.raw.cancel();
+            fetchers.skip.cancel();
+        };
+    }, [fetchers]);
 
     return (
         <StateContext.Provider value={state}>
@@ -203,13 +246,13 @@ async function fetchMultipleAccounts({
     dispatch,
     pubkeys,
     dataMode,
-    cluster,
+    onError,
     url,
 }: {
     dispatch: Dispatch;
     pubkeys: PublicKey[];
     dataMode: FetchAccountDataMode;
-    cluster: Cluster;
+    onError: (error: unknown) => void;
     url: string;
 }) {
     for (const pubkey of pubkeys) {
@@ -222,7 +265,7 @@ async function fetchMultipleAccounts({
     }
 
     const BATCH_SIZE = 100;
-    const connection = new Connection(url, 'confirmed');
+    const rpc = getRpc(url);
 
     let nextBatchStart = 0;
     while (nextBatchStart < pubkeys.length) {
@@ -230,16 +273,19 @@ async function fetchMultipleAccounts({
         nextBatchStart += BATCH_SIZE;
 
         try {
-            let results;
-            if (dataMode === 'parsed') {
-                results = (await connection.getMultipleParsedAccounts(batch)).value;
-            } else if (dataMode === 'raw') {
-                results = await connection.getMultipleAccountsInfo(batch);
-            } else {
-                results = await connection.getMultipleAccountsInfo(batch, {
-                    dataSlice: { length: 0, offset: 0 },
-                });
-            }
+            const addresses = batch.map(toKitAddress);
+            const { value: results } =
+                dataMode === 'parsed'
+                    ? await rpc
+                          .getMultipleAccounts(addresses, { commitment: 'confirmed', encoding: 'jsonParsed' })
+                          .send()
+                    : await rpc
+                          .getMultipleAccounts(addresses, {
+                              commitment: 'confirmed',
+                              encoding: 'base64',
+                              ...(dataMode === 'skip' && { dataSlice: { length: 0, offset: 0 } }),
+                          })
+                          .send();
 
             for (let i = 0; i < batch.length; i++) {
                 const pubkey = batch[i];
@@ -258,17 +304,12 @@ async function fetchMultipleAccounts({
                 } else {
                     let space: number | undefined = undefined;
                     let parsedData: ParsedData | undefined;
-                    if ('parsed' in result.data) {
-                        const accountData: ParsedAccountData = result.data;
-                        space = result.data.space;
+                    // jsonParsed answers with base64 data for any account its parsers don't cover,
+                    // so an array here means "no parsed representation", not "raw mode".
+                    if (!Array.isArray(result.data)) {
+                        space = Number(result.data.space);
                         try {
-                            parsedData = await handleParsedAccountData(
-                                connection,
-                                pubkey,
-                                accountData,
-                                url,
-                                result.lamports,
-                            );
+                            parsedData = await handleParsedAccountData(rpc, pubkey, result.data, url, result.lamports);
                         } catch (error) {
                             Logger.error(error, {
                                 address: pubkey.toBase58(),
@@ -280,9 +321,9 @@ async function fetchMultipleAccounts({
                     // If we cannot parse account layout as native spl account
                     // then keep raw data for other components to decode
                     let rawData: Uint8Array | undefined;
-                    if (!parsedData && !('parsed' in result.data) && dataMode !== 'skip') {
-                        space = result.data.length;
-                        rawData = result.data;
+                    if (!parsedData && Array.isArray(result.data) && dataMode !== 'skip') {
+                        rawData = fromBase64(result.data[0]);
+                        space = rawData.length;
                     }
 
                     account = {
@@ -291,8 +332,8 @@ async function fetchMultipleAccounts({
                             raw: rawData,
                         },
                         executable: result.executable,
-                        lamports: result.lamports,
-                        owner: result.owner,
+                        lamports: Number(result.lamports),
+                        owner: toLegacyPublicKey(result.owner),
                         pubkey,
                         space,
                     };
@@ -307,9 +348,7 @@ async function fetchMultipleAccounts({
                 });
             }
         } catch (error) {
-            if (cluster !== Cluster.Custom) {
-                Logger.error(error, { url });
-            }
+            onError(error);
 
             for (const pubkey of batch) {
                 dispatch({
@@ -323,24 +362,40 @@ async function fetchMultipleAccounts({
     }
 }
 
+// The kit-typed shape of a jsonParsed account's `data` when the RPC could parse it — the
+// `[base64, 'base64']` tuple fallback is excluded (callers branch on `Array.isArray` first).
+type ParsedAccountData = Exclude<AccountInfoWithJsonData['data'], readonly [string, string]>;
+
 async function handleParsedAccountData(
-    connection: Connection,
+    rpc: SolanaRpc,
     accountKey: PublicKey,
     accountData: ParsedAccountData,
     url: string,
-    lamports: number,
+    lamports: bigint,
 ): Promise<ParsedData | undefined> {
-    const info = create(accountData.parsed, ParsedInfo);
+    // kit upcasts every integral value in the jsonParsed payload to a bigint; the superstruct
+    // validators below expect plain-JSON numbers.
+    const info = create(withNumbersInsteadOfBigInts(accountData.parsed), ParsedInfo);
+    // TODO: adopt @explorer/entity-inspector's accounts module (src/accounts: classifyAccountKindBase + kinds.ts; needs a browser-safe ./accounts subpath) instead of this inline kind switch
     switch (accountData.program) {
-        case 'bpf-upgradeable-loader': {
+        case BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL: {
             const parsed = create(info, UpgradeableLoaderAccount);
 
             // Fetch program data to get program upgradeability info
             let programData: ProgramDataAccountInfo | undefined;
             if (parsed.type === 'program') {
-                const result = (await connection.getParsedAccountInfo(parsed.info.programData)).value;
-                if (result && 'parsed' in result.data && result.data.program === 'bpf-upgradeable-loader') {
-                    const info = create(result.data.parsed, ParsedInfo);
+                const { value: result } = await rpc
+                    .getAccountInfo(toKitAddress(parsed.info.programData), {
+                        commitment: 'confirmed',
+                        encoding: 'jsonParsed',
+                    })
+                    .send();
+                if (
+                    result &&
+                    !Array.isArray(result.data) &&
+                    result.data.program === BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL
+                ) {
+                    const info = create(withNumbersInsteadOfBigInts(result.data.parsed), ParsedInfo);
                     programData = create(info, ProgramDataAccount).info;
                 }
             }
@@ -352,15 +407,15 @@ async function handleParsedAccountData(
             };
         }
 
-        case 'stake': {
+        case STAKE_PROGRAM_LABEL: {
             const parsed = create(info, StakeAccount);
             const stakeInfo = parsed.info;
 
             const activation =
                 parsed.type === 'delegated' && stakeInfo.stake !== null
-                    ? await getStakeActivation(createSolanaRpc(url), {
+                    ? await getStakeActivation(rpc, {
                           delegation: stakeInfo.stake.delegation,
-                          lamports: BigInt(lamports),
+                          lamports,
                           rentExemptReserve: stakeInfo.meta.rentExemptReserve,
                       })
                     : undefined;
@@ -377,35 +432,35 @@ async function handleParsedAccountData(
             };
         }
 
-        case 'vote': {
+        case VOTE_PROGRAM_LABEL: {
             return {
                 parsed: create(info, VoteAccount),
                 program: accountData.program,
             };
         }
 
-        case 'nonce': {
+        case NONCE_PROGRAM_LABEL: {
             return {
                 parsed: create(info, NonceAccount),
                 program: accountData.program,
             };
         }
 
-        case 'sysvar': {
+        case SYSVAR_PROGRAM_LABEL: {
             return {
                 parsed: create(info, SysvarAccount),
                 program: accountData.program,
             };
         }
 
-        case 'config': {
+        case CONFIG_PROGRAM_LABEL: {
             return {
                 parsed: create(info, ConfigAccount),
                 program: accountData.program,
             };
         }
 
-        case 'address-lookup-table': {
+        case ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL: {
             const parsed = create(info, ParsedAddressLookupTableAccount);
             return {
                 parsed,
@@ -413,8 +468,8 @@ async function handleParsedAccountData(
             };
         }
 
-        case 'spl-token':
-        case 'spl-token-2022': {
+        case SPL_TOKEN_PROGRAM_LABEL:
+        case SPL_TOKEN_2022_PROGRAM_LABEL: {
             const parsed = create(info, TokenAccount);
             let nftData;
 
@@ -445,16 +500,17 @@ export function useAccountInfo(address: string | undefined): Cache.CacheEntry<Ac
     if (!context) {
         throw new Error(`useAccountInfo must be used within a AccountsProvider`);
     }
-    if (address === undefined) return;
-    return context.entries[address];
+    return useCacheEntry(context.entries, address);
 }
 
-export function useAccountInfos(addresses: string[]): Cache.CacheEntry<Account>[] {
+// An address with nothing in the cache yields undefined, as it always did — the old signature just did
+// not say so.
+export function useAccountInfos(addresses: string[]): (Cache.CacheEntry<Account> | undefined)[] {
     const context = React.useContext(StateContext);
     if (!context) {
         throw new Error(`useAccountInfos must be used within a AccountsProvider`);
     }
-    return addresses.map(address => context.entries[address]);
+    return useCacheEntries(context.entries, addresses);
 }
 
 export function useMintAccountInfo(address: string | undefined): MintAccountInfo | undefined {
@@ -508,7 +564,7 @@ function parseAddressLookupTableFromCache(
     const { parsed: parsedData, raw: rawData } = account.data;
 
     const key = new PublicKey(address);
-    if (parsedData && parsedData.program === 'address-lookup-table') {
+    if (parsedData && parsedData.program === ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL) {
         if (parsedData.parsed.type === 'lookupTable') {
             return [
                 new AddressLookupTableAccount({

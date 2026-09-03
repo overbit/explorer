@@ -64,6 +64,7 @@ describe('MetaplexFilesCard', () => {
                             primarySaleHappened: false,
                             tokenStandard: null,
                             updateAuthority: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+                            uri: 'https://example.com/metadata.json',
                             uses: null,
                         },
                     },
@@ -76,7 +77,7 @@ describe('MetaplexFilesCard', () => {
             owner: new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'),
             pubkey: new PublicKey('So11111111111111111111111111111111111111112'),
             ...overrides,
-        } as any);
+        }) as any;
 
     const mockOnNotFound = vi.fn(() => {
         throw new Error('Not found');

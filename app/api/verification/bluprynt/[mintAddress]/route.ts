@@ -4,16 +4,16 @@ import { Cluster, serverClusterUrl } from '@utils/cluster';
 import { NextResponse } from 'next/server';
 import { deriveAttestationPda, deriveSchemaPda } from 'sas-lib';
 
+import { CACHE_HEADERS, ERROR_CACHE_HEADERS, isTimeoutError } from '@/app/shared/lib/http-utils';
 import { Logger } from '@/app/shared/lib/logger';
 
-import { CACHE_HEADERS, ERROR_CACHE_HEADERS } from '../../config';
 import { BLUPRYNT_CONFIG } from '../config';
 
 const RPC_TIMEOUT_MS = 15_000;
 // SAS protocol supports up to 256 schema versions. We decided to use 32 for now.
 const MAX_SCHEMA_VERSIONS = 32;
 
-const connection = new Connection(serverClusterUrl(Cluster.MainnetBeta, ''), {
+const connection = new Connection(serverClusterUrl(Cluster.MainnetBeta), {
     commitment: 'confirmed',
     fetchMiddleware: (info, init, fetch) => {
         fetch(info, { ...init, signal: AbortSignal.timeout(RPC_TIMEOUT_MS) });
@@ -85,9 +85,4 @@ export async function GET(_request: Request, props: Params) {
             { headers: ERROR_CACHE_HEADERS, status: 500 },
         );
     }
-}
-
-// https://developer.mozilla.org/en-US/docs/Web/API/AbortSignal/timeout_static#exceptions
-function isTimeoutError(error: unknown): boolean {
-    return error instanceof DOMException && error.name === 'TimeoutError';
 }

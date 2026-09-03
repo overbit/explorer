@@ -1,9 +1,9 @@
 import { EXPLORER_BASE_URL as baseUrl } from '@utils/env';
 
-import { useCluster } from '@/app/providers/cluster';
-import { Cluster, clusterSlug } from '@/app/utils/cluster';
+import { Cluster, type ClusterSelection, clusterSlug } from '../lib/cluster';
+import { useCluster } from './use-cluster';
 
-export function buildExplorerLink(cluster: Cluster, customUrl: string | undefined, path: string): string {
+export function buildExplorerLink(selection: ClusterSelection, path: string): string {
     let url: string;
     if (!baseUrl.endsWith('/') && !path.startsWith('/')) {
         url = path === '' ? baseUrl : `${baseUrl}/${path}`;
@@ -11,17 +11,17 @@ export function buildExplorerLink(cluster: Cluster, customUrl: string | undefine
         url = `${baseUrl}${path}`;
     }
 
-    // Add cluster query parameter for non-mainnet clusters
     const params = new URLSearchParams();
-    switch (cluster) {
+    switch (selection.cluster) {
         case Cluster.Testnet:
         case Cluster.Devnet:
         case Cluster.Simd296:
-            params.append('cluster', clusterSlug(cluster));
+            params.append('cluster', clusterSlug(selection.cluster));
             break;
         case Cluster.Custom:
-            params.append('cluster', clusterSlug(cluster));
-            if (customUrl) params.append('customUrl', customUrl);
+            params.append('cluster', clusterSlug(selection.cluster));
+            // Unconditional: a Custom selection always carries an endpoint.
+            params.append('customUrl', selection.endpoint.href);
             break;
         case Cluster.MainnetBeta:
         default:
@@ -29,7 +29,6 @@ export function buildExplorerLink(cluster: Cluster, customUrl: string | undefine
             break;
     }
 
-    // Add query parameters if any
     const queryString = params.toString();
     if (queryString) {
         if (url.indexOf('?') === -1) {
@@ -43,6 +42,6 @@ export function buildExplorerLink(cluster: Cluster, customUrl: string | undefine
 }
 
 export function useExplorerLink(path: string) {
-    const { cluster, customUrl } = useCluster();
-    return { link: buildExplorerLink(cluster, customUrl, path) };
+    const { selection } = useCluster();
+    return { link: buildExplorerLink(selection, path) };
 }

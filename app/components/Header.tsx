@@ -1,14 +1,10 @@
 import { AccountHeader } from '@components/account/AccountHeader';
-import { TokenMarketData } from '@components/common/TokenMarketData';
 import { isTokenProgramData } from '@providers/accounts';
 import { type ComponentProps, useMemo } from 'react';
 
-import {
-    TokenVerificationBadge,
-    useCoinGeckoVerification,
-    type VerificationTarget,
-} from '@/app/features/token-verification-badge';
-import { toAddress } from '@/app/shared/model/address';
+import { TokenMarketData, useTokenMarketData } from '@/app/features/token-market-data';
+import { TokenVerificationBadge, type VerificationTarget } from '@/app/features/token-verification-badge';
+import { toKitAddress } from '@/app/shared/lib/web3js-compat';
 import { isNativeMint, isTokenMintByOwner } from '@/app/shared/model/token-program';
 
 type HeaderProps = ComponentProps<typeof AccountHeader>;
@@ -21,9 +17,9 @@ export function Header({ address, account, tokenInfo, isTokenInfoLoading }: Head
         parsedData &&
         isTokenProgramData(parsedData) &&
         parsedData?.parsed.type === 'mint' &&
-        isTokenMintByOwner(toAddress(account.owner), account.data.raw);
+        isTokenMintByOwner(toKitAddress(account.owner), account.data.raw);
 
-    const coinInfo = useCoinGeckoVerification(address, !!isTokenMint);
+    const marketData = useTokenMarketData(address, !!isTokenMint);
 
     const verificationTarget: VerificationTarget = useMemo(
         () => ({
@@ -35,8 +31,8 @@ export function Header({ address, account, tokenInfo, isTokenInfoLoading }: Head
     );
 
     return (
-        <div className="header">
-            <div className="header-body e-flex e-flex-col e-items-start e-gap-4 lg:e-flex-row lg:e-items-end lg:e-justify-between lg:e-gap-1">
+        <div className="mb-8">
+            <div className="flex flex-col items-start gap-4 border-0 border-b border-solid border-dk-gray-700-dark py-6 lg:flex-row lg:items-end lg:justify-between lg:gap-1">
                 <AccountHeader
                     address={address}
                     account={account}
@@ -44,9 +40,9 @@ export function Header({ address, account, tokenInfo, isTokenInfoLoading }: Head
                     isTokenInfoLoading={isTokenInfoLoading}
                 />
                 {isTokenMint && (
-                    <div className="e-flex e-w-full e-flex-col e-gap-1 sm:e-items-start sm:e-gap-2 md:e-w-auto md:e-flex-row">
+                    <div className="flex w-full flex-col gap-1 sm:items-start sm:gap-2 md:w-auto md:flex-row">
                         <TokenVerificationBadge target={verificationTarget} isTokenInfoLoading={isTokenInfoLoading} />
-                        <TokenMarketData coinInfo={coinInfo} />
+                        <TokenMarketData marketData={marketData} />
                     </div>
                 )}
             </div>

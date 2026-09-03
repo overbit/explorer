@@ -1,5 +1,5 @@
 import { truncateAddress } from '@entities/address';
-import { ParsedTransactionWithMeta } from '@solana/web3.js';
+import type { TransactionWithMeta } from '@entities/transaction-data';
 import { lamportsToSolString } from '@utils/index';
 
 import { Logger } from '@/app/shared/lib/logger';
@@ -14,18 +14,17 @@ import { createSolTransferReceipt } from './sol-transfer';
 import { createTokenTransferReceipt } from './token-transfer';
 import { hasTransfers, isSolReceipt, isTokenReceipt, type Receipt } from './types';
 
-export type ReceiptUnavailabilityReason = 'mixed-mint' | 'no-transfers';
+export type ReceiptUnavailabilityReason = 'inner-transfers' | 'mixed-mint' | 'no-transfers';
 
 export type ReceiptResult =
-    | { kind: 'ok'; receipt: FormattedReceipt }
-    | { kind: 'unavailable'; reason: ReceiptUnavailabilityReason };
+    { kind: 'ok'; receipt: FormattedReceipt } | { kind: 'unavailable'; reason: ReceiptUnavailabilityReason };
 
 export async function createReceipt(signature: string, cluster?: QueryCluster): Promise<ReceiptResult> {
     const data = await getTx(signature, undefined, cluster);
     return extractReceiptData(data.transaction, data.cluster);
 }
 
-export async function extractReceiptData(tx: ParsedTransactionWithMeta, cluster: Cluster): Promise<ReceiptResult> {
+export async function extractReceiptData(tx: TransactionWithMeta, cluster: Cluster): Promise<ReceiptResult> {
     const tokenOutcome = await createTokenTransferReceipt(tx, (mint: string | undefined) =>
         getParsedTokenInfo(mint, cluster),
     );
@@ -41,7 +40,8 @@ export async function extractReceiptData(tx: ParsedTransactionWithMeta, cluster:
         return { kind: 'ok', receipt: formatReceiptData(solReceipt, cluster) };
     }
 
-    return { kind: 'unavailable', reason: 'no-transfers' };
+    const hasInnerInstructions = (tx.meta?.innerInstructions?.length ?? 0) > 0;
+    return { kind: 'unavailable', reason: hasInnerInstructions ? 'inner-transfers' : 'no-transfers' };
 }
 
 export function formatReceiptData(receipt: Receipt, cluster: Cluster): FormattedReceipt {

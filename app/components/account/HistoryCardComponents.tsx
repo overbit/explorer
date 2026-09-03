@@ -1,6 +1,4 @@
-import { RefreshButton } from '@shared/ui/refresh-button';
 import { ConfirmedSignatureInfo, TransactionError } from '@solana/web3.js';
-import React from 'react';
 
 export type TransactionRow = {
     slot: number;
@@ -11,54 +9,6 @@ export type TransactionRow = {
     statusText: string;
     signatureInfo: ConfirmedSignatureInfo;
 };
-
-export function HistoryCardHeader({
-    title,
-    analyticsSection,
-    refresh,
-    fetching,
-}: {
-    title: string;
-    analyticsSection: string;
-    refresh: () => void;
-    fetching: boolean;
-}) {
-    return (
-        <div className="card-header align-items-center">
-            <h3 className="card-header-title">{title}</h3>
-            <RefreshButton analyticsSection={analyticsSection} onClick={refresh} fetching={fetching} />
-        </div>
-    );
-}
-
-export function HistoryCardFooter({
-    fetching,
-    foundOldest,
-    loadMore,
-}: {
-    fetching: boolean;
-    foundOldest: boolean;
-    loadMore: () => void;
-}) {
-    return (
-        <div className="card-footer">
-            {foundOldest ? (
-                <div className="text-muted text-center">Fetched full history</div>
-            ) : (
-                <button className="btn btn-primary w-100" onClick={() => loadMore()} disabled={fetching}>
-                    {fetching ? (
-                        <>
-                            <span className="align-text-top spinner-grow spinner-grow-sm me-2"></span>
-                            Loading
-                        </>
-                    ) : (
-                        'Load More'
-                    )}
-                </button>
-            )}
-        </div>
-    );
-}
 
 export function getTransactionRows(transactions: ConfirmedSignatureInfo[]): TransactionRow[] {
     const transactionRows: TransactionRow[] = [];

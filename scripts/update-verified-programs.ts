@@ -18,6 +18,8 @@ import { dirname, join } from 'path';
 import { array, create, type Infer, optional, refine, string, type } from 'superstruct';
 import { fileURLToPath } from 'url';
 
+import { normalizeRepoUrl, safeRepoUrl } from '../app/utils/verified-builds-url';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_PATH = join(__dirname, '../public/verified-programs.json');
 
@@ -108,7 +110,7 @@ async function main() {
         .map(addr => {
             const status = statuses.get(addr);
             const idlName = idlNames.get(addr);
-            const repoUrl = status?.repo_url || undefined;
+            const repoUrl = safeRepoUrl(normalizeRepoUrl(status?.repo_url));
             const name = idlName || deriveNameFromRepo(repoUrl) || `${addr.slice(0, 12)}...`;
 
             return {
@@ -208,8 +210,8 @@ async function fetchIdlNames(addresses: string[]): Promise<Map<string, string>> 
         if (i > 0) await sleep(CHUNK_DELAY_MS);
         const settled = await Promise.allSettled(
             chunks[i].map(async addr => {
-                const result = await fetchIdl(rpc, address(addr));
-                return { addr, name: result ? extractIdlName(result.idl) : undefined };
+                const idl = await fetchIdl(rpc, address(addr));
+                return { addr, name: idl ? extractIdlName(idl) : undefined };
             }),
         );
         for (const r of settled) {
