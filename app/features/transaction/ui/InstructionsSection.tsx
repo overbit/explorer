@@ -6,10 +6,8 @@ import { BpfUpgradeableLoaderDetailsCard } from '@components/instruction/bpf-upg
 import { ComputeBudgetDetailsCard } from '@components/instruction/ComputeBudgetDetailsCard';
 import { Ed25519DetailsCard } from '@components/instruction/ed25519/Ed25519DetailsCard';
 import { isEd25519Instruction } from '@components/instruction/ed25519/types';
-import { ManifestDetailsCard } from '@components/instruction/manifest/ManifestDetailsCard';
 import { MemoDetailsCard } from '@components/instruction/MemoDetailsCard';
-import { PythDetailsCard } from '@components/instruction/pyth/PythDetailsCard';
-import { isPythInstruction } from '@components/instruction/pyth/types';
+import { ManifestDetailsCard } from '@components/instruction/manifest/ManifestDetailsCard';
 import {
     isSolanaAttestationInstruction,
     SolanaAttestationDetailsCard,
@@ -29,6 +27,7 @@ import { TxInstructionSurface } from '@entities/instruction-card';
 import { isParsedInstruction, useInstructionParser } from '@entities/instruction-parser';
 import { isZkElGamalProofInstruction } from '@entities/zk-elgamal-proof';
 import { getMangoInstructionLabel, isMangoInstruction } from '@explorer/decoder-mango/detection';
+import { isPythInstruction } from '@explorer/decoder-pyth/detection';
 import {
     getSerumInstructionLabel,
     isDeprecatedSerumProgram,
@@ -50,6 +49,7 @@ import { AssociatedTokenDetailsCard } from '@features/decode-instruction-associa
 import { isLighthouseInstruction, LighthouseDetailsCard } from '@features/decode-instruction-lighthouse';
 import { isProgramMetadataInstruction } from '@features/decode-instruction-pmp/detection';
 import { IdlInstructionCard, useIdlInstructionDecode } from '@features/decode-instruction-with-idl';
+import { PythDetailsCard } from '@features/instruction-program-pyth';
 import { MetaplexTokenMetadataDetailsCard } from '@features/mpl-token-metadata';
 import { isStakeInstruction, RawStakeDetailsCard, StakeDetailsCard } from '@features/stake';
 import {
@@ -260,7 +260,15 @@ function InstructionCard({
             case STAKE_PROGRAM_LABEL:
                 return <StakeDetailsCard {...props} key={key} />;
             case SPL_MEMO_PROGRAM_LABEL:
-                return <MemoDetailsCard {...props} key={key} />;
+                return (
+                    <MemoDetailsCard
+                        key={key}
+                        ix={parsedIx}
+                        index={index}
+                        innerCards={innerCards}
+                        childIndex={childIndex}
+                    />
+                );
             case SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_LABEL:
                 return (
                     <AssociatedTokenDetailsCard
@@ -295,7 +303,16 @@ function InstructionCard({
     };
 
     if (isEd25519Instruction(transactionIx)) {
-        return <Ed25519DetailsCard key={key} {...props} tx={tx} />;
+        return (
+            <Ed25519DetailsCard
+                key={key}
+                tx={tx}
+                ix={transactionIx}
+                index={index}
+                innerCards={innerCards}
+                childIndex={childIndex}
+            />
+        );
     }
     if (isMangoInstruction(transactionIx)) {
         return (
@@ -333,7 +350,16 @@ function InstructionCard({
         return <WormholeDetailsCard key={key} {...props} />;
     }
     if (isPythInstruction(transactionIx)) {
-        return <PythDetailsCard key={key} {...props} />;
+        return (
+            <PythDetailsCard
+                key={key}
+                ix={transactionIx}
+                index={index}
+                innerCards={innerCards}
+                childIndex={childIndex}
+                signature={signature}
+            />
+        );
     }
     if (ComputeBudgetProgram.programId.equals(transactionIx.programId)) {
         return <ComputeBudgetDetailsCard key={key} {...props} />;
@@ -371,7 +397,12 @@ function InstructionCard({
     if (isSolanaAttestationInstruction(transactionIx)) {
         return (
             <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
-                <SolanaAttestationDetailsCard {...props} />
+                <SolanaAttestationDetailsCard
+                    ix={transactionIx}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
             </ErrorBoundary>
         );
     }
