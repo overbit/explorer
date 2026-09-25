@@ -6,6 +6,7 @@ import { TableCardBody } from '@components/common/TableCardBody';
 import { TimestampToggle } from '@components/common/TimestampToggle';
 import { LiveTransactionStatsCard } from '@components/LiveTransactionStatsCard';
 import { StatsNotReady } from '@components/StatsNotReady';
+import { AlpenglowCard } from '@features/alpenglow';
 import { UpcomingFeatures } from '@features/feature-gate';
 import { useCluster } from '@providers/cluster';
 import { StatsProvider } from '@providers/stats';
@@ -40,6 +41,8 @@ export default function Page() {
                     </div>
                 </div>
 
+                <AlpenglowCard />
+
                 <DeveloperResources />
 
                 <UpcomingFeatures />
@@ -65,12 +68,10 @@ function StatsCardBody() {
         return <StatsNotReady error={error} />;
     }
 
-    const { avgSlotTime_1h, avgSlotTime_1min, epochInfo, blockTime } = dashboardInfo;
-    const hourlySlotTime = Math.round(1000 * avgSlotTime_1h);
-    const averageSlotTime = Math.round(1000 * avgSlotTime_1min);
+    const { msPerSlot_1h, msPerSlot_1min, epochInfo, blockTime } = dashboardInfo;
     const { slotIndex, slotsInEpoch } = epochInfo;
     const epochProgress = `${percentage(slotIndex, slotsInEpoch, 2).toFixed(1)}%`;
-    const epochTimeRemaining = slotsToHumanString(Number(slotsInEpoch - slotIndex), hourlySlotTime);
+    const epochTimeRemaining = slotsToHumanString(Number(slotsInEpoch - slotIndex), msPerSlot_1h);
     const { blockHeight, absoluteSlot } = epochInfo;
 
     return (
@@ -103,13 +104,15 @@ function StatsCardBody() {
                         </td>
                     </tr>
                 )}
-                <tr>
-                    <td className="w-full">Slot time (1min average)</td>
-                    <td className="text-right font-mono">{averageSlotTime}ms</td>
-                </tr>
+                {msPerSlot_1min !== undefined && (
+                    <tr>
+                        <td className="w-full">Slot time (1min average)</td>
+                        <td className="text-right font-mono">{msPerSlot_1min}ms</td>
+                    </tr>
+                )}
                 <tr>
                     <td className="w-full">Slot time (1hr average)</td>
-                    <td className="text-right font-mono">{hourlySlotTime}ms</td>
+                    <td className="text-right font-mono">{msPerSlot_1h}ms</td>
                 </tr>
                 <tr>
                     <td className="w-full">Epoch</td>

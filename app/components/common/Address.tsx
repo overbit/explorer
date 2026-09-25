@@ -2,7 +2,6 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/shared/ui/tooltip';
 import { cn } from '@components/shared/utils';
-import { useTokenMetadata } from '@entities/nft';
 import { useTokenInfo } from '@entities/token-info';
 import { useCluster } from '@providers/cluster';
 import { PublicKey } from '@solana/web3.js';
@@ -37,7 +36,6 @@ type Props = {
     link?: boolean;
     raw?: boolean;
     noTruncate?: boolean;
-    useMetadata?: boolean;
     overrideText?: string;
     tokenLabelInfo?: TokenLabelInfo;
     fetchTokenLabelInfo?: boolean;
@@ -52,7 +50,6 @@ export function Address({
     link,
     raw,
     noTruncate,
-    useMetadata,
     overrideText,
     tokenLabelInfo,
     className,
@@ -71,11 +68,6 @@ export function Address({
     const display = displayAddress(address, cluster, tokenLabelInfo);
 
     let addressLabel = raw ? address : display;
-
-    const metaplexData = useTokenMetadata(useMetadata, address);
-    if (metaplexData && metaplexData.data) {
-        addressLabel = metaplexData.data.name;
-    }
 
     const shouldFetchTokenInfo = fetchTokenLabelInfo && isVisible;
     const tokenInfo = useTokenInfo(shouldFetchTokenInfo, address, cluster, genesisHash);
@@ -166,7 +158,7 @@ export function Address({
     );
 
     return (
-        <span ref={visibilityRef} className="block w-full">
+        <span ref={visibilityRef} className="block w-full min-w-0">
             <div ref={rowRef} className={rowVariants({ alignRight: Boolean(alignRight) })} aria-label={ariaLabel}>
                 {/* Hidden span for measuring the natural text width — absolutely positioned so it doesn't affect layout */}
                 {isMidTruncateCandidate && (
