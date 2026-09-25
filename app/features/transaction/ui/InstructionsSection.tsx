@@ -25,9 +25,10 @@ import { ZkElGamalProofDetailsCard } from '@components/instruction/ZkElGamalProo
 import { CollapsibleSection } from '@components/shared/ui/collapsible-section';
 import { TxInstructionSurface } from '@entities/instruction-card';
 import { isParsedInstruction, useInstructionParser } from '@entities/instruction-parser';
+import { trustedInnerInstructions } from '@entities/transaction-data';
 import { isZkElGamalProofInstruction } from '@entities/zk-elgamal-proof';
 import { getMangoInstructionLabel, isMangoInstruction } from '@explorer/decoder-mango/detection';
-import { isPythInstruction } from '@explorer/decoder-pyth/detection';
+import { isPythProgramId } from '@explorer/decoder-pyth/detection';
 import {
     getSerumInstructionLabel,
     isDeprecatedSerumProgram,
@@ -126,11 +127,9 @@ export function InstructionsSection({ signature }: SignatureProps) {
         [index: number]: (ParsedInstruction | PartiallyDecodedInstruction)[];
     } = {};
 
-    if (
-        meta?.innerInstructions &&
-        (cluster !== Cluster.MainnetBeta || transactionWithMeta.slot >= INNER_INSTRUCTIONS_START_SLOT)
-    ) {
-        meta.innerInstructions.forEach((parsed: ParsedInnerInstruction) => {
+    const trusted = trustedInnerInstructions(meta?.innerInstructions, { cluster, slot: transactionWithMeta.slot });
+    if (trusted) {
+        trusted.forEach((parsed: ParsedInnerInstruction) => {
             if (!innerInstructions[parsed.index]) {
                 innerInstructions[parsed.index] = [];
             }
@@ -349,15 +348,19 @@ function InstructionCard({
     if (isWormholeInstruction(transactionIx)) {
         return <WormholeDetailsCard key={key} {...props} />;
     }
-    if (isPythInstruction(transactionIx)) {
+    if (isPythProgramId(transactionIx.programId.toBase58())) {
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (!dispatched) {
+            return <UnknownDetailsCard key={key} {...props} />;
+        }
         return (
             <PythDetailsCard
                 key={key}
-                ix={transactionIx}
+                ix={dispatched}
+                raw={transactionIx}
                 index={index}
                 innerCards={innerCards}
                 childIndex={childIndex}
-                signature={signature}
             />
         );
     }
