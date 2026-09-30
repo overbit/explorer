@@ -4,8 +4,6 @@ import { AddressLookupTableDetailsCard } from '@components/instruction/AddressLo
 import { BpfLoaderDetailsCard } from '@components/instruction/bpf-loader/BpfLoaderDetailsCard';
 import { BpfUpgradeableLoaderDetailsCard } from '@components/instruction/bpf-upgradeable-loader/BpfUpgradeableLoaderDetailsCard';
 import { ComputeBudgetDetailsCard } from '@components/instruction/ComputeBudgetDetailsCard';
-import { Ed25519DetailsCard } from '@components/instruction/ed25519/Ed25519DetailsCard';
-import { isEd25519Instruction } from '@components/instruction/ed25519/types';
 import { MemoDetailsCard } from '@components/instruction/MemoDetailsCard';
 import { ManifestDetailsCard } from '@components/instruction/manifest/ManifestDetailsCard';
 import {
@@ -21,12 +19,10 @@ import { TokenSwapDetailsCard } from '@components/instruction/TokenSwapDetailsCa
 import { UnknownDetailsCard } from '@components/instruction/UnknownDetailsCard';
 import { isWormholeInstruction } from '@components/instruction/wormhole/types';
 import { WormholeDetailsCard } from '@components/instruction/WormholeDetailsCard';
-import { ZkElGamalProofDetailsCard } from '@components/instruction/ZkElGamalProofDetailsCard';
 import { CollapsibleSection } from '@components/shared/ui/collapsible-section';
 import { TxInstructionSurface } from '@entities/instruction-card';
 import { isParsedInstruction, useInstructionParser } from '@entities/instruction-parser';
 import { trustedInnerInstructions } from '@entities/transaction-data';
-import { isZkElGamalProofInstruction } from '@entities/zk-elgamal-proof';
 import { getMangoInstructionLabel, isMangoInstruction } from '@explorer/decoder-mango/detection';
 import { isPythProgramId } from '@explorer/decoder-pyth/detection';
 import {
@@ -47,9 +43,15 @@ import {
     VOTE_PROGRAM_LABEL,
 } from '@explorer/parsers';
 import { AssociatedTokenDetailsCard } from '@features/decode-instruction-associated-token';
+import {
+    Ed25519DetailsCard,
+    isEd25519Instruction,
+    siblingDataFromParsedTransaction,
+} from '@features/decode-instruction-ed25519';
 import { isLighthouseInstruction, LighthouseDetailsCard } from '@features/decode-instruction-lighthouse';
 import { isProgramMetadataInstruction } from '@features/decode-instruction-pmp/detection';
 import { IdlInstructionCard, useIdlInstructionDecode } from '@features/decode-instruction-with-idl';
+import { isZkElGamalProofInstruction, ZkElGamalProofDetailsCard } from '@features/decode-instruction-zk-elgamal-proof';
 import { PythDetailsCard } from '@features/instruction-program-pyth';
 import { MetaplexTokenMetadataDetailsCard } from '@features/mpl-token-metadata';
 import { isStakeInstruction, RawStakeDetailsCard, StakeDetailsCard } from '@features/stake';
@@ -73,8 +75,7 @@ import {
     SignatureResult,
     TransactionSignature,
 } from '@solana/web3.js';
-import { Cluster } from '@utils/cluster';
-import { INNER_INSTRUCTIONS_START_SLOT, SignatureProps } from '@utils/index';
+import { SignatureProps } from '@utils/index';
 import { isManifestProgramId, isManifestWrapperProgramId } from '@utils/manifest';
 import { intoTransactionInstruction } from '@utils/tx';
 import dynamic from 'next/dynamic';
@@ -302,16 +303,21 @@ function InstructionCard({
     };
 
     if (isEd25519Instruction(transactionIx)) {
-        return (
-            <Ed25519DetailsCard
-                key={key}
-                tx={tx}
-                ix={transactionIx}
-                index={index}
-                innerCards={innerCards}
-                childIndex={childIndex}
-            />
-        );
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (dispatched) {
+            return (
+                <Ed25519DetailsCard
+                    key={key}
+                    ix={dispatched}
+                    raw={transactionIx}
+                    siblingData={siblingDataFromParsedTransaction(tx)}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
+            );
+        }
+        return <UnknownDetailsCard key={key} {...props} />;
     }
     if (isMangoInstruction(transactionIx)) {
         return (
@@ -368,7 +374,20 @@ function InstructionCard({
         return <ComputeBudgetDetailsCard key={key} {...props} />;
     }
     if (isZkElGamalProofInstruction(transactionIx)) {
-        return <ZkElGamalProofDetailsCard key={key} {...props} />;
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (dispatched) {
+            return (
+                <ZkElGamalProofDetailsCard
+                    key={key}
+                    ix={dispatched}
+                    raw={transactionIx}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
+            );
+        }
+        return <UnknownDetailsCard key={key} {...props} />;
     }
     if (isLighthouseInstruction(transactionIx)) {
         const dispatched = dispatcher.fromTransactionInstruction(transactionIx);

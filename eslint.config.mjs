@@ -72,7 +72,6 @@ const HOOKS_PENDING_CLIENT_ONLY = [
     'app/features/cluster-switcher/model/use-cluster-href.ts',
     'app/features/cluster-switcher/model/use-custom-url-draft.ts',
     'app/features/cookie/model/use-analytics-consent.ts',
-    'app/features/decode-account-pmp/model/use-decode-buffer-payload.ts',
     'app/features/decode-account-pmp/model/use-decode-metadata-payload.ts',
     'app/features/decode-account-pmp/model/use-resolve-buffer-config-from-bytes.ts',
     'app/features/decode-account-pmp/model/use-resolve-buffer-config-onchain.ts',
@@ -737,7 +736,6 @@ export default tseslint.config(
     {
         files: [
             // app root & route pages (pre-FSD)
-            'app/@analytics/default.js',
             'app/layout.tsx',
             'app/address/[[]address[]]/layout.tsx',
             'app/block/[[]slot[]]/accounts/page-client.tsx',
@@ -912,7 +910,6 @@ export default tseslint.config(
             'app/features/security-txt/ui/utils.ts',
             'app/features/stake/lib/stake-activation-math.ts',
             'app/features/stake/ui/StakeAccountSection.tsx',
-            'app/features/token-verification-badge/model/use-bluprynt.ts',
             'app/features/token-verification-badge/model/use-jupiter.ts',
             'app/features/token-verification-badge/model/use-rugcheck.ts',
             'app/features/token-verification-badge/ui/VerificationIcon.tsx',

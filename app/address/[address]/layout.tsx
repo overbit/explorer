@@ -238,7 +238,7 @@ export default function AddressLayout(props: Props) {
     const { children } = props;
 
     return (
-        <AccountsProvider>
+        <AccountsProvider fetchNftMetadata>
             <AddressLayoutInner params={params}>{children}</AddressLayoutInner>
         </AccountsProvider>
     );
