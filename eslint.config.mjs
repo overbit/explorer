@@ -72,7 +72,6 @@ const HOOKS_PENDING_CLIENT_ONLY = [
     'app/features/cluster-switcher/model/use-cluster-href.ts',
     'app/features/cluster-switcher/model/use-custom-url-draft.ts',
     'app/features/cookie/model/use-analytics-consent.ts',
-    'app/features/decode-account-pmp/model/use-decode-buffer-payload.ts',
     'app/features/decode-account-pmp/model/use-decode-metadata-payload.ts',
     'app/features/decode-account-pmp/model/use-resolve-buffer-config-from-bytes.ts',
     'app/features/decode-account-pmp/model/use-resolve-buffer-config-onchain.ts',
@@ -130,6 +129,25 @@ const clientBoundaryPlugin = {
                 },
                 schema: [],
                 type: 'suggestion',
+            },
+        },
+        // The selector matches the module prologue and a function-body prologue, and both declare an action.
+        'no-server-actions': {
+            create(context) {
+                return {
+                    "ExpressionStatement[directive='use server']"(node) {
+                        context.report({ messageId: 'noServerActions', node });
+                    },
+                };
+            },
+            meta: {
+                docs: { description: "Disallow 'use server' Server Actions." },
+                messages: {
+                    noServerActions:
+                        'Do not add a Server Action. Its arguments are serialized over HTTP, so a callback among them reaches the server as a proxy that throws when called. Send the data to a route handler as JSON and parse it with superstruct.',
+                },
+                schema: [],
+                type: 'problem',
             },
         },
     },
@@ -355,16 +373,6 @@ export default tseslint.config(
             // app/components (pre-FSD legacy)
             'app/components/account/token-extensions/ScaledUiAmountMultiplierTooltip.tsx',
             'app/components/instruction/AnchorDetailsCard.tsx',
-            'app/components/instruction/pyth/AddMappingDetailsCard.tsx',
-            'app/components/instruction/pyth/AddPriceDetailsCard.tsx',
-            'app/components/instruction/pyth/AddProductDetailsCard.tsx',
-            'app/components/instruction/pyth/AggregatePriceDetailsCard.tsx',
-            'app/components/instruction/pyth/BasePublisherOperationCard.tsx',
-            'app/components/instruction/pyth/InitMappingDetailsCard.tsx',
-            'app/components/instruction/pyth/InitPriceDetailsCard.tsx',
-            'app/components/instruction/pyth/SetMinPublishersDetailsCard.tsx',
-            'app/components/instruction/pyth/UpdatePriceDetailsCard.tsx',
-            'app/components/instruction/pyth/UpdateProductDetailsCard.tsx',
 
             // app/providers (pre-FSD legacy)
             'app/providers/accounts/flagged-accounts.tsx',
@@ -480,6 +488,11 @@ export default tseslint.config(
                                     // Hooks an entity keeps off `index.ts` so that barrel stays callable
                                     // from a route handler; the `client-only` marker on it catches misuse.
                                     { type: 'entity', internalPath: 'client.ts' },
+                                    // `server.ts` is an entity's server-only public API - the split AGENTS.md
+                                    // mandates for server code in a slice - so it is as much a barrel as
+                                    // `index.ts`. Needed because some entity exports must never reach a client
+                                    // bundle: `@entities/idl/server` pulls in `@solana/idl` (~40 KB gzip).
+                                    { type: 'entity', internalPath: 'server.ts' },
                                     { type: 'entity-public-api' },
                                     { type: 'feature', captured: { name: '{{ name }}' } },
                                 ],
@@ -558,6 +571,15 @@ export default tseslint.config(
         },
     },
 
+    // The app has no Server Actions. Browser-to-server data goes through route handlers instead.
+    {
+        files: ['app/**/*.[jt]s?(x)', 'packages/**/*.[jt]s?(x)'],
+        plugins: { boundary: clientBoundaryPlugin },
+        rules: {
+            'boundary/no-server-actions': 'error',
+        },
+    },
+
     // A `server.ts` barrel declares which exports are for server consumers; without the marker that
     // declaration is unenforced, and a client importer is only found at runtime. Universal code stays
     // reachable through the slice's `index.ts`.
@@ -591,10 +613,8 @@ export default tseslint.config(
             'app/features/idl/interactive-idl/model/use-mainnet-confirmation.ts',
             'app/features/instruction-simulation/ui/SimulationCard.tsx',
             'app/features/receipt/receipt-page.tsx',
-            'app/features/search/api/discover-with-utl.ts',
-            'app/features/search/api/resolve-search-tokens.ts',
             'app/features/stake/ui/StakeAccountSection.tsx',
-            'app/features/transaction/ui/AccountDetailSlideover.tsx',
+            'app/features/transaction/ui/AccountDetailDrawer.tsx',
             'app/features/transaction/ui/AccountExpandedSections.tsx',
             'app/features/transaction/ui/InstructionsSection.tsx',
             'app/features/transaction/ui/SummaryCard.tsx',
@@ -635,6 +655,33 @@ export default tseslint.config(
                         {
                             group: ['@jest/*'],
                             message: 'This project uses Vitest. Import from `vitest` instead.',
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+
+    // `scripts/**` runs as a plain Node process, where a slice's `server.ts` / `client.ts` barrel is
+    // the wrong door: the `server-only` / `client-only` marker on it resolves to its throwing
+    // `default` export outside Next's build, so the script dies on import. No green gate catches it —
+    // vite aliases both markers to a stub, so the specs pass and the cron is where it surfaces.
+    {
+        files: ['scripts/**/*.[jt]s?(x)'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    patterns: [
+                        {
+                            group: [
+                                '**/app/**/server',
+                                '**/app/**/server.ts',
+                                '**/app/**/client',
+                                '**/app/**/client.ts',
+                            ],
+                            message:
+                                "A slice's `server.ts`/`client.ts` barrel carries a `server-only`/`client-only` marker that throws outside Next's build. Import the module that owns the export instead.",
                         },
                     ],
                 },
@@ -717,7 +764,6 @@ export default tseslint.config(
     {
         files: [
             // app root & route pages (pre-FSD)
-            'app/@analytics/default.js',
             'app/layout.tsx',
             'app/address/[[]address[]]/layout.tsx',
             'app/block/[[]slot[]]/accounts/page-client.tsx',
@@ -772,9 +818,7 @@ export default tseslint.config(
             'app/components/instruction/ProgramEventsCard.tsx',
             'app/components/instruction/codama/CodamaInstructionDetailsCard.tsx',
             'app/components/instruction/codama/codamaUtils.tsx',
-            'app/components/instruction/ed25519/Ed25519DetailsCard.tsx',
             'app/components/instruction/program-metadata-idl/ProgramMetadataIdlInstructionDetailsCard.tsx',
-            'app/components/instruction/pyth/UpdateProductDetailsCard.tsx',
             'app/components/instruction/token/TokenDetailsCard.tsx',
             'app/components/shared/StatusBadge.tsx',
             'app/components/shared/account/ProgramHeader.tsx',
@@ -894,7 +938,6 @@ export default tseslint.config(
             'app/features/security-txt/ui/utils.ts',
             'app/features/stake/lib/stake-activation-math.ts',
             'app/features/stake/ui/StakeAccountSection.tsx',
-            'app/features/token-verification-badge/model/use-bluprynt.ts',
             'app/features/token-verification-badge/model/use-jupiter.ts',
             'app/features/token-verification-badge/model/use-rugcheck.ts',
             'app/features/token-verification-badge/ui/VerificationIcon.tsx',
@@ -941,8 +984,6 @@ export default tseslint.config(
             'app/components/instruction/bpf-upgradeable-loader/BpfUpgradeableLoaderDetailsCard.tsx',
             'app/components/instruction/codama/codamaUtils.tsx',
             'app/components/instruction/program-metadata-idl/ProgramMetadataIdlInstructionDetailsCard.tsx',
-            'app/components/instruction/pyth/program.ts',
-            'app/components/instruction/sas/SolanaAttestationDetailsCard.tsx',
             'app/components/instruction/token/TokenDetailsCard.tsx',
 
             // app/providers (pre-FSD legacy)
