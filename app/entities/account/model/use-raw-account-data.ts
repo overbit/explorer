@@ -1,38 +1,48 @@
 import { useCluster } from '@providers/cluster';
-import { Connection, PublicKey } from '@solana/web3.js';
-import { useMemo } from 'react';
+import { PublicKey } from '@solana/web3.js';
 import useSWR from 'swr';
 import useSWRImmutable from 'swr/immutable';
 
+import { fetchRawAccountData } from '../api/fetch-raw-account-data';
+
 export const rawAccountDataKey = (url: string, address: string) => ['raw-account-data', url, address] as const;
 
-function useConnection() {
+export function useLazyRawAccountData(accountAddress: string) {
+    const { data, error, isLoading, mutate } = useRawAccountData(accountAddress);
+
+    return {
+        data,
+        error,
+        load: () => {
+            if (data === undefined && !isLoading) void mutate();
+        },
+        loading: isLoading,
+    };
+}
+
+const LAZY_SWR = {
+    errorRetryCount: 3,
+    revalidateOnFocus: false,
+    revalidateOnMount: false,
+    revalidateOnReconnect: false,
+} as const;
+
+export function useRawAccountData(accountAddress: string) {
     const { url } = useCluster();
-    return useMemo(() => new Connection(url, 'confirmed'), [url]);
+
+    return useSWR<Uint8Array | undefined, Error>(
+        rawAccountDataKey(url, accountAddress),
+        () => fetchRawAccountData(url, accountAddress),
+        LAZY_SWR,
+    );
 }
 
-export function useRawAccountData(address: string) {
-    const connection = useConnection();
-
-    return useSWR(rawAccountDataKey(connection.rpcEndpoint, address), () => fetchRawAccountData(connection, address), {
-        revalidateOnFocus: false,
-        revalidateOnMount: false,
-        revalidateOnReconnect: false,
-    });
-}
-
-/** Eager variant — fetches immediately on mount. Used by RawAccountRows in AccountCard. */
 export function useRawAccountDataOnMount(pubkey: PublicKey): { data: Uint8Array | undefined; isLoading: boolean } {
-    const connection = useConnection();
+    const { url } = useCluster();
 
-    const { data, isLoading } = useSWRImmutable(rawAccountDataKey(connection.rpcEndpoint, pubkey.toBase58()), () =>
-        fetchRawAccountData(connection, pubkey.toBase58()),
+    const { data, isLoading } = useSWRImmutable(rawAccountDataKey(url, pubkey.toBase58()), () =>
+        fetchRawAccountData(url, pubkey.toBase58()),
     );
 
     return { data, isLoading };
-}
-
-async function fetchRawAccountData(connection: Connection, address: string): Promise<Uint8Array | undefined> {
-    const info = await connection.getAccountInfo(new PublicKey(address));
-    return info?.data ? new Uint8Array(info.data) : undefined;
 }

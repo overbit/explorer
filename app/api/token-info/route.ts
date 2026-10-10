@@ -1,4 +1,12 @@
-import { getTokenInfos, getTokenInfosFromMetaplex, isValidCluster, type TokenInfo } from '@entities/token-info/server';
+import {
+    createAbortSignal,
+    getChainId,
+    getTokenInfos,
+    getTokenInfosFromMetaplex,
+    isTransientError,
+    isValidCluster,
+    type TokenInfo,
+} from '@entities/token-info/server';
 import { isAddress } from '@solana/kit';
 import { Cluster, serverClusterUrl } from '@utils/cluster';
 import { NextResponse } from 'next/server';
@@ -8,11 +16,10 @@ import { Logger } from '@/app/shared/lib/logger';
 
 import { CACHE_MAX_AGE, MAX_ADDRESSES } from './config';
 
-// Platform backstop, as in `app/api/metadata/proxy/route.ts`. One invocation is the UTL list
-// lookup, then at most four RPC calls (`MAX_ADDRESSES` keys, chunked 100 at a time), then the
-// off-chain logo reads — and those are already bounded as a group by `LOGO_BUDGET_MS` (10s).
-// That leaves headroom here rather than a limit the fallback can hit. Kept inline (not in
-// config.ts): Next reads route segment config only as literal route exports.
+// Platform backstop. One invocation is the UTL list lookup, then the on-chain fallback's
+// chunked RPC reads, then the off-chain logo reads — already bounded as a group by
+// `LOGO_BUDGET_MS`. Headroom, not a limit the fallback can hit. Kept inline: Next reads
+// route segment config only as literal route exports.
 export const maxDuration = 30;
 
 const AddressStruct = refine(string(), 'address', value => isAddress(value));
@@ -57,9 +64,35 @@ export async function POST(request: Request) {
 
     // Allow to resolve chainId with genesisHash as the request does not use Connection instance
     // For requests that use Connection, Custom cluster should be disabled
+    let upstreamError: unknown;
     const listed = await getTokenInfos(addresses, cluster, genesisHash, {
         next: { revalidate: CACHE_MAX_AGE },
+        onError: error => {
+            upstreamError = error;
+        },
+        // The upstream call is otherwise unbounded, and `maxDuration` is a much blunter backstop.
+        signal: createAbortSignal(),
     });
+
+    // `getTokenInfos` reports a partial drop and a total outage through the same hook, and answers
+    // `[]` for an outage and for a genuine all-not-found alike. Nothing resolved plus an error is
+    // the outage: answer 4xx/5xx so it is not cached, and so callers can tell it from "not listed"
+    // instead of rendering an empty list as though the list had spoken.
+    if (upstreamError !== undefined && listed.length === 0) {
+        reportEmptyList(upstreamError, {
+            addressCount: addresses.length,
+            chainId: getChainId(cluster, genesisHash),
+            cluster,
+        });
+        return upstreamUnavailable();
+    }
+
+    if (upstreamError !== undefined) {
+        Logger.warn('[api:token-info] List lookup dropped some tokens', {
+            sentry: true,
+            sentryExtras: { addressCount: addresses.length, cluster, resolved: listed.length },
+        });
+    }
 
     // Opt-in: only the batch path used to get the SDK's on-chain fallback, so
     // single-mint callers keep paying for the list lookup alone.
@@ -69,8 +102,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ content: tokens });
 }
 
+function reportEmptyList(error: unknown, extras: Record<string, unknown>) {
+    const message = '[api:token-info] List lookup resolved nothing';
+    if (isTransientError(error)) {
+        Logger.warn(message, { error, ...extras });
+        return;
+    }
+    Logger.error(new Error(message, { cause: error }), { sentry: true, sentryExtras: extras });
+}
+
 function invalidRequest() {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+}
+
+function upstreamUnavailable() {
+    return NextResponse.json({ error: 'Token list unavailable' }, { status: 503 });
 }
 
 /**

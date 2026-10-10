@@ -63,7 +63,7 @@ export function BaseInstructionCard({
         return setShowRaw(r => !r);
     };
     const scrollAnchorRef = useScrollAnchor(
-        getInstructionCardScrollAnchorId(childIndex != null ? [index + 1, childIndex + 1] : [index + 1]),
+        getInstructionCardScrollAnchorId(childIndex !== undefined ? [index + 1, childIndex + 1] : [index + 1]),
     );
     return (
         <CollapsibleCard
@@ -126,9 +126,9 @@ export function BaseInstructionCard({
                     )}
                     {innerCards && innerCards.length > 0 && (
                         <>
-                            <BaseTable.Row className="bg-dark-background text-dk-xs font-semibold uppercase tracking-[0.08em] text-dark-muted-foreground">
+                            <BaseTable.SectionRow>
                                 <BaseTable.Cell colSpan={3}>Inner Instructions</BaseTable.Cell>
-                            </BaseTable.Row>
+                            </BaseTable.SectionRow>
                             <BaseTable.Row>
                                 <BaseTable.Cell colSpan={3}>
                                     <div>{innerCards}</div>
@@ -138,9 +138,9 @@ export function BaseInstructionCard({
                     )}
                     {eventCards && eventCards.length > 0 && (
                         <>
-                            <BaseTable.Row className="bg-dark-background text-dk-xs font-semibold uppercase tracking-[0.08em] text-dark-muted-foreground">
+                            <BaseTable.SectionRow>
                                 <BaseTable.Cell colSpan={3}>Events</BaseTable.Cell>
-                            </BaseTable.Row>
+                            </BaseTable.SectionRow>
                             <BaseTable.Row>
                                 <BaseTable.Cell colSpan={3}>
                                     <div className="m-6">{eventCards}</div>

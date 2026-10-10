@@ -1,83 +1,102 @@
 import { Address } from '@components/common/Address';
 import { SolBalance } from '@components/common/SolBalance';
-import type { BlockWithV1 } from '@entities/block-data';
-import { PublicKey } from '@solana/web3.js';
+import type { BlockData } from '@entities/block-data';
+import type { Reward } from '@solana/kit';
 import React from 'react';
 
-import { Button } from '@/app/components/shared/ui/button';
-import { Card, CardFooter, CardHeader, CardTitle } from '@/app/shared/ui/Card';
-import { BaseTable } from '@/app/shared/ui/Table';
+import { GridHeaderRow, LoadMoreButton, type ResponsiveCell, ResponsiveGridRow } from '@/app/components/block/shared';
+import { DataListCard } from '@/app/shared/ui/DataListCard';
 
 const PAGE_SIZE = 10;
 
-export function BlockRewardsCard({ block }: { block: BlockWithV1 }) {
-    const [rewardsDisplayed, setRewardsDisplayed] = React.useState(PAGE_SIZE);
+const HEADERS = [
+    { label: 'Address' },
+    { label: 'Type' },
+    { label: 'Amount' },
+    { label: 'Post Balance' },
+    { label: '% Change' },
+];
+
+// Address takes the slack (`1fr`); the numeric columns are capped so long balances can't squeeze the
+// address column to nothing. Header and rows share this template so columns stay aligned. Inline (not a
+// `grid-cols-[…]` class) so the Storybook JIT can't purge it.
+const GRID_TEMPLATE: React.CSSProperties = {
+    gridTemplateColumns: 'minmax(0,1fr) minmax(auto,4rem) minmax(auto,6.5rem) minmax(auto,8.5rem) minmax(auto,7.5rem)',
+};
+
+// Share of the pre-reward balance that this reward moved.
+function percentChange(reward: Reward): string | undefined {
+    if (!reward.postBalance) {
+        return undefined;
+    }
+    const preBalance = reward.postBalance - reward.lamports;
+    if (preBalance === 0n) return undefined;
+
+    const precision = 1_000_000_000n;
+    const absoluteLamports = reward.lamports < 0n ? -reward.lamports : reward.lamports;
+    const absolutePreBalance = preBalance < 0n ? -preBalance : preBalance;
+    const scaledPercent = (absoluteLamports * 100n * precision) / absolutePreBalance;
+    const whole = scaledPercent / precision;
+    const fraction = (scaledPercent % precision).toString().padStart(9, '0');
+    return `${whole}.${fraction}%`;
+}
+
+export function BlockRewardsCard({ block }: { block: BlockData }) {
+    const [displayed, setDisplayed] = React.useState(PAGE_SIZE);
 
     if (!block.rewards || block.rewards.length < 1) {
         return null;
     }
 
+    const rewards = block.rewards;
+    const visible = rewards.slice(0, displayed);
+
     return (
-        <Card ui="dashkit">
-            <CardHeader ui="dashkit">
-                <CardTitle as="h3" ui="dashkit">
-                    Block Rewards
-                </CardTitle>
-            </CardHeader>
-            <BaseTable ui="dashkit" variant="card" nowrap>
-                <BaseTable.Head>
-                    <BaseTable.Row>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Address</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Type</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Amount</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">New Balance</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Percent Change</BaseTable.HeaderCell>
-                    </BaseTable.Row>
-                </BaseTable.Head>
-                <BaseTable.Body>
-                    {block.rewards.map((reward, index) => {
-                        if (index >= rewardsDisplayed - 1) {
-                            return null;
-                        }
+        <DataListCard title="Block Rewards" breakpoint="md">
+            <div className="text-sm text-white">
+                <GridHeaderRow headers={HEADERS} style={GRID_TEMPLATE} rightAlignFrom={2} />
 
-                        let percentChange;
-                        if (reward.postBalance !== null && reward.postBalance !== 0) {
-                            percentChange = (
-                                (Math.abs(reward.lamports) / (reward.postBalance - reward.lamports)) *
-                                100
-                            ).toFixed(9);
-                        }
-                        return (
-                            <BaseTable.Row key={reward.pubkey + reward.rewardType}>
-                                <BaseTable.Cell>
-                                    <Address pubkey={new PublicKey(reward.pubkey)} link />
-                                </BaseTable.Cell>
-                                <BaseTable.Cell>{reward.rewardType}</BaseTable.Cell>
-                                <BaseTable.Cell>
-                                    <SolBalance lamports={reward.lamports} />
-                                </BaseTable.Cell>
-                                <BaseTable.Cell>
-                                    {reward.postBalance ? <SolBalance lamports={reward.postBalance} /> : '-'}
-                                </BaseTable.Cell>
-                                <BaseTable.Cell>{percentChange ? `${percentChange}%` : '-'}</BaseTable.Cell>
-                            </BaseTable.Row>
-                        );
-                    })}
-                </BaseTable.Body>
-            </BaseTable>
+                {visible.map(reward => {
+                    const pct = percentChange(reward);
+                    const cells: ResponsiveCell[] = [
+                        {
+                            children: <Address address={reward.pubkey} link />,
+                            desktopClassName: 'min-w-0',
+                            key: 'address',
+                            label: 'Address',
+                        },
+                        { children: reward.rewardType, key: 'type', label: 'Type' },
+                        {
+                            children: <SolBalance lamports={reward.lamports} />,
+                            desktopClassName: 'text-right',
+                            key: 'amount',
+                            label: 'Amount',
+                        },
+                        {
+                            children: reward.postBalance ? <SolBalance lamports={reward.postBalance} /> : '-',
+                            desktopClassName: 'text-right',
+                            key: 'postBalance',
+                            label: 'Post Balance',
+                        },
+                        {
+                            children: pct ?? '-',
+                            desktopClassName: 'break-all text-right',
+                            key: 'pctChange',
+                            label: '% Change',
+                            mobile: <span className="break-all">{pct ?? '-'}</span>,
+                        },
+                    ];
+                    return (
+                        <ResponsiveGridRow
+                            key={reward.pubkey + reward.rewardType}
+                            cells={cells}
+                            gridStyle={GRID_TEMPLATE}
+                        />
+                    );
+                })}
 
-            {block.rewards.length > rewardsDisplayed && (
-                <CardFooter ui="dashkit">
-                    <Button
-                        ui="dashkit"
-                        variant="primary"
-                        className="w-full"
-                        onClick={() => setRewardsDisplayed(displayed => displayed + PAGE_SIZE)}
-                    >
-                        Load More
-                    </Button>
-                </CardFooter>
-            )}
-        </Card>
+                {rewards.length > displayed && <LoadMoreButton onClick={() => setDisplayed(d => d + PAGE_SIZE)} />}
+            </div>
+        </DataListCard>
     );
 }

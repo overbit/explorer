@@ -1,3 +1,4 @@
+import { getRpc } from '@entities/cluster/@x/token-info';
 import { getUmi } from '@entities/nft/@x/token-info';
 import {
     findMetadataPda,
@@ -6,11 +7,18 @@ import {
     TokenStandard,
 } from '@metaplex-foundation/mpl-token-metadata';
 import { publicKey, unwrapOption } from '@metaplex-foundation/umi';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { address } from '@solana/kit';
 import { fetchAll } from '@utils/fetch-all';
 
-import { MAX_SIZE, USER_AGENT } from '@/app/api/metadata/proxy/config';
-import { fetchResource, matchJsonContent } from '@/app/api/metadata/proxy/feature';
+import {
+    fetchResource,
+    logProxyError,
+    logResourceFetched,
+    matchJsonContent,
+    MAX_SIZE,
+    USER_AGENT,
+} from '@/app/api/metadata/proxy';
+import { chunk } from '@/app/shared/lib/array';
 import { IPFS_PROTOCOL, resolveIpfsUri } from '@/app/shared/lib/ipfs';
 import { parseUrl } from '@/app/shared/lib/url';
 
@@ -59,14 +67,6 @@ function removeEmptyChars(value: string): string {
     return value.split(NULL_CHAR).join('');
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-    const chunks: T[][] = [];
-    for (let i = 0; i < items.length; i += size) {
-        chunks.push(items.slice(i, i + size));
-    }
-    return chunks;
-}
-
 /**
  * Reads `decimals` for each mint. Mirrors the SDK, which fetched the parsed
  * mint accounts separately because the metadata account does not carry them.
@@ -79,16 +79,21 @@ async function fetchDecimals(
     const decimals = new Map<string, number>();
     if (mints.length === 0) return decimals;
 
-    const connection = new Connection(rpcEndpoint);
+    const rpc = getRpc(rpcEndpoint);
 
     await Promise.all(
         chunk(mints, ACCOUNTS_CHUNK_SIZE).map(async batch => {
             try {
-                const { value } = await connection.getMultipleParsedAccounts(batch.map(mint => new PublicKey(mint)));
+                const { value } = await rpc
+                    .getMultipleAccounts(
+                        batch.map(mint => address(mint)),
+                        { encoding: 'jsonParsed' },
+                    )
+                    .send();
                 value.forEach((account, index) => {
                     const data = account?.data;
                     if (!data || !('parsed' in data)) return;
-                    const parsedDecimals = data.parsed?.info?.decimals;
+                    const parsedDecimals = (data.parsed as { info?: { decimals?: unknown } }).info?.decimals;
                     if (typeof parsedDecimals === 'number') {
                         decimals.set(batch[index], parsedDecimals);
                     }
@@ -147,18 +152,26 @@ async function fetchLogoUri(
     if (timeout <= 0) return null;
 
     try {
-        const { data, headers } = await fetchResource(uri, {
+        const [error, resource] = await fetchResource(uri, {
             headers: new Headers({ 'User-Agent': USER_AGENT }),
             size: MAX_SIZE,
             timeout,
         });
+        if (error) {
+            // A dead link, a slow host, or a blocked address is routine for third-party metadata.
+            // `logProxyError` owns the log, so `onError` would log the failure a second time.
+            logProxyError(error);
+            // eslint-disable-next-line unicorn/no-null -- same contract as above
+            return null;
+        }
+        logResourceFetched(resource, MAX_SIZE);
+        const { data, headers } = resource;
         // eslint-disable-next-line unicorn/no-null -- same contract as above
         if (!matchJsonContent(headers.get('content-type'))) return null;
         const image = (data as { image?: unknown } | undefined)?.image;
         // eslint-disable-next-line unicorn/no-null -- same contract as above
         return typeof image === 'string' ? image : null;
     } catch (error) {
-        // A dead link, a slow host, or a blocked address is routine for third-party metadata.
         options.onError?.(error);
         // eslint-disable-next-line unicorn/no-null -- same contract as above
         return null;

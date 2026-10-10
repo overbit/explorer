@@ -1,6 +1,6 @@
 import { useAnchorProgram } from '@entities/idl';
 import { hashProgramBytes, orderVerifiedEntries, TRUSTED_SIGNERS } from '@explorer/entity-inspector/verification';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { PublicKey } from '@solana/web3.js';
 import { useEffect, useMemo } from 'react';
 import { array, boolean, create, Infer, nullable, string, type } from 'superstruct';
 import useSWRImmutable from 'swr/immutable';
@@ -15,13 +15,14 @@ import { composeOnchainRepoUrl, normalizeRepoUrl, safeRepoUrl } from './verified
 
 const OSEC_REGISTRY_URL = 'https://verify.osec.io';
 const OSEC_DEVNET_REGISTRY_URL = 'https://verify-devnet.osec.io';
+export const OSEC_URL = 'https://osec.io';
 const VERIFY_PROGRAM_ID = 'verifycLy8mB96wd9wqq3WDXQwM4oU6r42Th37Db9fC';
 
 export function supportsVerifiedBuilds(cluster: Cluster): boolean {
     return getOsecRegistryUrl(cluster) !== undefined;
 }
 
-// OSEC hosts a separate verified-builds registry per cluster; Testnet/Custom/SIMD-296 have none.
+// OSEC hosts a separate verified-builds registry per cluster; Testnet/Custom have none.
 export function getOsecRegistryUrl(cluster: Cluster): string | undefined {
     switch (cluster) {
         case Cluster.MainnetBeta:
@@ -288,11 +289,10 @@ function useEnrichedOsecInfo({
     programAuthority: PublicKey | null;
 }) {
     const { url: clusterUrl, cluster: cluster } = useCluster();
-    const connection = new Connection(clusterUrl);
 
     const { program: accountAnchorProgram, isLoading: isIdlLoading } = useAnchorProgram(
         VERIFY_PROGRAM_ID,
-        connection.rpcEndpoint,
+        clusterUrl,
         cluster,
     );
     const signerAuthorities = useMemo(

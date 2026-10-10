@@ -56,6 +56,30 @@ describe('fetchRawTransaction', () => {
         ]);
     });
 
+    it('should request the confirmed commitment by default', async () => {
+        respondWith(transactionResult(createV1TransactionBytes({})));
+
+        await fetchRawTransaction(URL, SIGNATURE);
+
+        expect(requestBody().params[1].commitment).toBe('confirmed');
+    });
+
+    it('should return the block time from the response', async () => {
+        respondWith(transactionResult(createV1TransactionBytes({})));
+
+        const raw = await fetchRawTransaction(URL, SIGNATURE);
+
+        expect(raw?.blockTime).toBe(1_778_761_079);
+    });
+
+    it('should leave a missing block time absent rather than defaulting it', async () => {
+        respondWith({ ...transactionResult(createV1TransactionBytes({})), blockTime: null });
+
+        const raw = await fetchRawTransaction(URL, SIGNATURE);
+
+        expect(raw?.blockTime).toBeUndefined();
+    });
+
     it('should return null when the RPC does not hold the transaction', async () => {
         respondWith(null);
 
@@ -167,6 +191,14 @@ describe('fetchRawTransaction', () => {
         expect(raw?.meta?.innerInstructions).toEqual([
             { index: 0, instructions: [{ accounts: [1, 2], data: '3Bxs4', programIdIndex: 3 }] },
         ]);
+    });
+
+    it('should return the slot from the RPC response', async () => {
+        respondWith(transactionResult(createWeb3TransactionBytes('legacy')));
+
+        const raw = await fetchRawTransaction(URL, SIGNATURE);
+
+        expect(raw?.slot).toBe(372_654_321);
     });
 
     it('should reject when the RPC call fails, so the provider can report the failure', async () => {

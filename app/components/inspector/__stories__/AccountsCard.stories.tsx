@@ -110,11 +110,14 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement);
 
-        // Should show account rows
-        await expect(canvas.getByText('Account #1')).toBeInTheDocument();
-        await expect(canvas.getByText('Account #2')).toBeInTheDocument();
-
         // Should show the card header
         await expect(canvas.getByText(/Account List/)).toBeInTheDocument();
+
+        // The fee payer (account index 0) carries Signer + Writable badges from the message header; both
+        // the mobile card and the desktop row emit them, so there is at least one of each.
+        await expect(canvas.getAllByText('Signer').length).toBeGreaterThan(0);
+        await expect(canvas.getAllByText('Writable').length).toBeGreaterThan(0);
+        await expect(canvas.getByText('Total Account Size:')).toBeInTheDocument();
+        await expect(canvas.getAllByText('36 bytes').length).toBeGreaterThan(0);
     },
 };

@@ -1,6 +1,5 @@
 'use client';
 import './styles.css';
-import '@/app/types/bigint'; // polyfill toJSON for BigInt
 
 import { AddressLookupTableAccountSection } from '@components/account/address-lookup-table/AddressLookupTableAccountSection';
 import { isAddressLookupTableAccount } from '@components/account/address-lookup-table/types';
@@ -46,6 +45,7 @@ import {
 import FLAGGED_ACCOUNTS_WARNING from '@providers/accounts/flagged-accounts';
 import { CacheEntry, FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
+import { SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS as SAS_PROGRAM_ID } from '@solana/attestation';
 import { Address } from '@solana/kit';
 import { PROGRAM_ID as ACCOUNT_COMPRESSION_ID } from '@solana/spl-account-compression';
 import { PublicKey } from '@solana/web3.js';
@@ -55,7 +55,6 @@ import { FEATURE_PROGRAM_ID } from '@utils/parseFeatureAccount';
 import { redirect, RedirectType } from 'next/navigation';
 import React, { PropsWithChildren, Suspense, use } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS as SAS_PROGRAM_ID } from 'sas-lib';
 import useSWRImmutable from 'swr/immutable';
 
 import { CompressedNftCard } from '@/app/components/account/CompressedNftCard';
@@ -162,6 +161,14 @@ type AddressParams = { address: string };
 type Props = PropsWithChildren<{ params: Promise<AddressParams> }>;
 type InnerProps = PropsWithChildren<{ params: AddressParams }>;
 
+// Single source of truth for the page's centered content-column width — every section on the address
+// page aligns to this, so the max-width lives in one place rather than being copy-pasted per section.
+const CONTENT_WIDTH = 'mx-auto w-full max-w-5xl';
+
+function ContentWidth({ children }: { children: React.ReactNode }) {
+    return <div className={CONTENT_WIDTH}>{children}</div>;
+}
+
 function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     const fetchAccount = useFetchAccountInfo();
     const { status, cluster, url, genesisHash } = useCluster();
@@ -197,15 +204,19 @@ function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     }, [address, status, info]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
-        <PageContainer variant="pulled-up">
-            <Header
-                address={address}
-                account={info?.data}
-                tokenInfo={fullTokenInfo}
-                isTokenInfoLoading={isTokenInfoLoading}
-            />
+        <PageContainer variant="pulled-up" className="pt-3 lg:pt-5">
+            <ContentWidth>
+                <Header
+                    address={address}
+                    account={info?.data}
+                    tokenInfo={fullTokenInfo}
+                    isTokenInfoLoading={isTokenInfoLoading}
+                />
+            </ContentWidth>
             {!pubkey ? (
-                <ErrorCard text={`Address "${address}" is not valid`} />
+                <ContentWidth>
+                    <ErrorCard text={`Address "${address}" is not valid`} />
+                </ContentWidth>
             ) : (
                 <DetailsSections
                     info={info}
@@ -227,7 +238,7 @@ export default function AddressLayout(props: Props) {
     const { children } = props;
 
     return (
-        <AccountsProvider>
+        <AccountsProvider fetchNftMetadata>
             <AddressLayoutInner params={params}>{children}</AddressLayoutInner>
         </AccountsProvider>
     );
@@ -285,8 +296,10 @@ function DetailsSections({
     return (
         <>
             {FLAGGED_ACCOUNTS_WARNING[address] ?? null}
-            <InfoSection account={account} tokenInfo={tokenInfo} />
-            {notification}
+            <ContentWidth>
+                <InfoSection account={account} tokenInfo={tokenInfo} />
+            </ContentWidth>
+            <ContentWidth>{notification}</ContentWidth>
             <MoreSection baseUrl={`/address/${address}`} tabs={navigationTabs} asyncChildren={asyncTabChildren}>
                 {children}
             </MoreSection>
@@ -395,14 +408,16 @@ function MoreSection({
 
     return (
         <>
-            <StickyHeader>
+            <StickyHeader className={CONTENT_WIDTH}>
                 <PageContainer>
-                    <NavigationTabs buildHref={buildHref} tabs={tabs}>
-                        {asyncChildren}
-                    </NavigationTabs>
+                    <ContentWidth>
+                        <NavigationTabs buildHref={buildHref} tabs={tabs}>
+                            {asyncChildren}
+                        </NavigationTabs>
+                    </ContentWidth>
                 </PageContainer>
             </StickyHeader>
-            {children}
+            <ContentWidth>{children}</ContentWidth>
         </>
     );
 }

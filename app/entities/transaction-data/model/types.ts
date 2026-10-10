@@ -27,6 +27,8 @@ export type TransactionWithMeta = Omit<ParsedTransactionWithMeta, 'version'> & {
 };
 
 type RawTransactionBase = {
+    /** Unix timestamp in seconds. */
+    blockTime?: number;
     messageBytes: Uint8Array;
     meta?: {
         innerInstructions?: CompiledInnerInstruction[];
@@ -42,6 +44,8 @@ type RawTransactionBase = {
     serializedSize: number;
     /** Base58-encoded in signer order; a signer slot that has not been signed is `undefined`. */
     signatures: (string | undefined)[];
+    /** The slot that confirmed the transaction. */
+    slot: number;
 };
 
 /**

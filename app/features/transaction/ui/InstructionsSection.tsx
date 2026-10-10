@@ -1,15 +1,8 @@
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
-import { AddressLookupTableDetailsCard } from '@components/instruction/AddressLookupTableDetailsCard';
+import { ManifestDetailsCard } from '@components/instruction/manifest/ManifestDetailsCard';
 import { BpfLoaderDetailsCard } from '@components/instruction/bpf-loader/BpfLoaderDetailsCard';
 import { BpfUpgradeableLoaderDetailsCard } from '@components/instruction/bpf-upgradeable-loader/BpfUpgradeableLoaderDetailsCard';
-import { ComputeBudgetDetailsCard } from '@components/instruction/ComputeBudgetDetailsCard';
-import { Ed25519DetailsCard } from '@components/instruction/ed25519/Ed25519DetailsCard';
-import { isEd25519Instruction } from '@components/instruction/ed25519/types';
-import { ManifestDetailsCard } from '@components/instruction/manifest/ManifestDetailsCard';
-import { MemoDetailsCard } from '@components/instruction/MemoDetailsCard';
-import { PythDetailsCard } from '@components/instruction/pyth/PythDetailsCard';
-import { isPythInstruction } from '@components/instruction/pyth/types';
 import {
     isSolanaAttestationInstruction,
     SolanaAttestationDetailsCard,
@@ -23,12 +16,12 @@ import { TokenSwapDetailsCard } from '@components/instruction/TokenSwapDetailsCa
 import { UnknownDetailsCard } from '@components/instruction/UnknownDetailsCard';
 import { isWormholeInstruction } from '@components/instruction/wormhole/types';
 import { WormholeDetailsCard } from '@components/instruction/WormholeDetailsCard';
-import { ZkElGamalProofDetailsCard } from '@components/instruction/ZkElGamalProofDetailsCard';
 import { CollapsibleSection } from '@components/shared/ui/collapsible-section';
 import { TxInstructionSurface } from '@entities/instruction-card';
 import { isParsedInstruction, useInstructionParser } from '@entities/instruction-parser';
-import { isZkElGamalProofInstruction } from '@entities/zk-elgamal-proof';
+import { trustedInnerInstructions } from '@entities/transaction-data';
 import { getMangoInstructionLabel, isMangoInstruction } from '@explorer/decoder-mango/detection';
+import { isPythProgramId } from '@explorer/decoder-pyth/detection';
 import {
     getSerumInstructionLabel,
     isDeprecatedSerumProgram,
@@ -46,10 +39,20 @@ import {
     SYSTEM_PROGRAM_LABEL,
     VOTE_PROGRAM_LABEL,
 } from '@explorer/parsers';
+import { AddressLookupTableDetailsCard } from '@features/decode-instruction-address-lookup-table';
 import { AssociatedTokenDetailsCard } from '@features/decode-instruction-associated-token';
+import { ComputeBudgetDetailsCard, isComputeBudgetInstruction } from '@features/decode-instruction-compute-budget';
+import {
+    Ed25519DetailsCard,
+    isEd25519Instruction,
+    siblingDataFromParsedTransaction,
+} from '@features/decode-instruction-ed25519';
 import { isLighthouseInstruction, LighthouseDetailsCard } from '@features/decode-instruction-lighthouse';
+import { MemoDetailsCard } from '@features/decode-instruction-memo';
 import { isProgramMetadataInstruction } from '@features/decode-instruction-pmp/detection';
 import { IdlInstructionCard, useIdlInstructionDecode } from '@features/decode-instruction-with-idl';
+import { isZkElGamalProofInstruction, ZkElGamalProofDetailsCard } from '@features/decode-instruction-zk-elgamal-proof';
+import { PythDetailsCard } from '@features/instruction-program-pyth';
 import { MetaplexTokenMetadataDetailsCard } from '@features/mpl-token-metadata';
 import { isStakeInstruction, RawStakeDetailsCard, StakeDetailsCard } from '@features/stake';
 import {
@@ -64,7 +67,6 @@ import { useCluster } from '@providers/cluster';
 import { useTransactionDetails, useTransactionStatus } from '@providers/transactions';
 import { useFetchTransactionDetails } from '@providers/transactions/parsed';
 import {
-    ComputeBudgetProgram,
     ParsedInnerInstruction,
     ParsedInstruction,
     ParsedTransaction,
@@ -72,8 +74,7 @@ import {
     SignatureResult,
     TransactionSignature,
 } from '@solana/web3.js';
-import { Cluster } from '@utils/cluster';
-import { INNER_INSTRUCTIONS_START_SLOT, SignatureProps } from '@utils/index';
+import { SignatureProps } from '@utils/index';
 import { isManifestProgramId, isManifestWrapperProgramId } from '@utils/manifest';
 import { intoTransactionInstruction } from '@utils/tx';
 import dynamic from 'next/dynamic';
@@ -126,11 +127,9 @@ export function InstructionsSection({ signature }: SignatureProps) {
         [index: number]: (ParsedInstruction | PartiallyDecodedInstruction)[];
     } = {};
 
-    if (
-        meta?.innerInstructions &&
-        (cluster !== Cluster.MainnetBeta || transactionWithMeta.slot >= INNER_INSTRUCTIONS_START_SLOT)
-    ) {
-        meta.innerInstructions.forEach((parsed: ParsedInnerInstruction) => {
+    const trusted = trustedInnerInstructions(meta?.innerInstructions, { cluster, slot: transactionWithMeta.slot });
+    if (trusted) {
+        trusted.forEach((parsed: ParsedInnerInstruction) => {
             if (!innerInstructions[parsed.index]) {
                 innerInstructions[parsed.index] = [];
             }
@@ -151,15 +150,27 @@ export function InstructionsSection({ signature }: SignatureProps) {
                         if (index in innerInstructions) {
                             innerInstructions[index].forEach((ix, childIndex) => {
                                 const res = (
-                                    <InstructionCard
+                                    <ErrorBoundary
                                         key={`${index}-${childIndex}`}
-                                        index={index}
-                                        ix={ix}
-                                        result={result}
-                                        signature={signature}
-                                        tx={transaction}
-                                        childIndex={childIndex}
-                                    />
+                                        fallback={
+                                            <InnerCardFallback
+                                                ix={ix}
+                                                tx={transaction}
+                                                result={result}
+                                                index={index}
+                                                childIndex={childIndex}
+                                            />
+                                        }
+                                    >
+                                        <InstructionCard
+                                            index={index}
+                                            ix={ix}
+                                            result={result}
+                                            signature={signature}
+                                            tx={transaction}
+                                            childIndex={childIndex}
+                                        />
+                                    </ErrorBoundary>
                                 );
                                 innerCards.push(res);
                             });
@@ -181,6 +192,26 @@ export function InstructionsSection({ signature }: SignatureProps) {
             </TxInstructionSurface>
         </CollapsibleSection>
     );
+}
+
+function InnerCardFallback({
+    ix,
+    tx,
+    result,
+    index,
+    childIndex,
+}: {
+    ix: ParsedInstruction | PartiallyDecodedInstruction;
+    tx: ParsedTransaction;
+    result: SignatureResult;
+    index: number;
+    childIndex: number;
+}) {
+    const fallbackIx = 'parsed' in ix ? ix : intoTransactionInstruction(tx, ix);
+    if (!fallbackIx) {
+        return <ErrorCard text="Could not display this instruction, please report" />;
+    }
+    return <UnknownDetailsCard ix={fallbackIx} result={result} index={index} childIndex={childIndex} />;
 }
 
 function InstructionCard({
@@ -260,7 +291,15 @@ function InstructionCard({
             case STAKE_PROGRAM_LABEL:
                 return <StakeDetailsCard {...props} key={key} />;
             case SPL_MEMO_PROGRAM_LABEL:
-                return <MemoDetailsCard {...props} key={key} />;
+                return (
+                    <MemoDetailsCard
+                        key={key}
+                        ix={parsedIx}
+                        index={index}
+                        innerCards={innerCards}
+                        childIndex={childIndex}
+                    />
+                );
             case SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_LABEL:
                 return (
                     <AssociatedTokenDetailsCard
@@ -275,7 +314,15 @@ function InstructionCard({
             case VOTE_PROGRAM_LABEL:
                 return <VoteDetailsCard {...props} key={key} />;
             case ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL:
-                return <AddressLookupTableDetailsCard {...props} key={key} />;
+                return (
+                    <AddressLookupTableDetailsCard
+                        key={key}
+                        ix={parsedIx}
+                        index={index}
+                        innerCards={innerCards}
+                        childIndex={childIndex}
+                    />
+                );
             default:
                 return <UnknownDetailsCard {...props} key={key} />;
         }
@@ -295,7 +342,21 @@ function InstructionCard({
     };
 
     if (isEd25519Instruction(transactionIx)) {
-        return <Ed25519DetailsCard key={key} {...props} tx={tx} />;
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (dispatched) {
+            return (
+                <Ed25519DetailsCard
+                    key={key}
+                    ix={dispatched}
+                    raw={transactionIx}
+                    siblingData={siblingDataFromParsedTransaction(tx)}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
+            );
+        }
+        return <UnknownDetailsCard key={key} {...props} />;
     }
     if (isMangoInstruction(transactionIx)) {
         return (
@@ -332,31 +393,77 @@ function InstructionCard({
     if (isWormholeInstruction(transactionIx)) {
         return <WormholeDetailsCard key={key} {...props} />;
     }
-    if (isPythInstruction(transactionIx)) {
-        return <PythDetailsCard key={key} {...props} />;
-    }
-    if (ComputeBudgetProgram.programId.equals(transactionIx.programId)) {
-        return <ComputeBudgetDetailsCard key={key} {...props} />;
-    }
-    if (isZkElGamalProofInstruction(transactionIx)) {
-        return <ZkElGamalProofDetailsCard key={key} {...props} />;
-    }
-    if (isLighthouseInstruction(transactionIx)) {
+    if (isPythProgramId(transactionIx.programId.toBase58())) {
         const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
-        if (isParsedInstruction(dispatched)) {
+        if (!dispatched) {
+            return <UnknownDetailsCard key={key} {...props} />;
+        }
+        return (
+            <PythDetailsCard
+                key={key}
+                ix={dispatched}
+                raw={transactionIx}
+                index={index}
+                innerCards={innerCards}
+                childIndex={childIndex}
+            />
+        );
+    }
+    if (isComputeBudgetInstruction(transactionIx)) {
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (dispatched) {
             return (
-                <LighthouseDetailsCard
+                <ComputeBudgetDetailsCard
                     key={key}
                     ix={dispatched}
                     raw={transactionIx}
                     index={index}
-                    result={result}
                     innerCards={innerCards}
                     childIndex={childIndex}
                 />
             );
         }
         return <UnknownDetailsCard key={key} {...props} />;
+    }
+    if (isZkElGamalProofInstruction(transactionIx)) {
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (dispatched) {
+            return (
+                <ZkElGamalProofDetailsCard
+                    key={key}
+                    ix={dispatched}
+                    raw={transactionIx}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
+            );
+        }
+        return <UnknownDetailsCard key={key} {...props} />;
+    }
+    if (isLighthouseInstruction(transactionIx)) {
+        const dispatched = dispatcher.fromTransactionInstruction(transactionIx);
+        if (isParsedInstruction(dispatched)) {
+            return (
+                <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
+                    <LighthouseDetailsCard
+                        ix={dispatched}
+                        raw={transactionIx}
+                        index={index}
+                        innerCards={innerCards}
+                        childIndex={childIndex}
+                    />
+                </ErrorBoundary>
+            );
+        }
+        return <UnknownDetailsCard key={key} {...props} />;
+    }
+    if (isManifestProgramId(transactionIx.programId) || isManifestWrapperProgramId(transactionIx.programId)) {
+        return (
+            <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
+                <ManifestDetailsCard {...props} />
+            </ErrorBoundary>
+        );
     }
     if (isStakeInstruction(transactionIx)) {
         return <RawStakeDetailsCard key={key} {...props} />;
@@ -371,14 +478,12 @@ function InstructionCard({
     if (isSolanaAttestationInstruction(transactionIx)) {
         return (
             <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
-                <SolanaAttestationDetailsCard {...props} />
-            </ErrorBoundary>
-        );
-    }
-    if (isManifestProgramId(transactionIx.programId) || isManifestWrapperProgramId(transactionIx.programId)) {
-        return (
-            <ErrorBoundary fallback={<UnknownDetailsCard {...props} />} key={key}>
-                <ManifestDetailsCard {...props} />
+                <SolanaAttestationDetailsCard
+                    ix={transactionIx}
+                    index={index}
+                    innerCards={innerCards}
+                    childIndex={childIndex}
+                />
             </ErrorBoundary>
         );
     }

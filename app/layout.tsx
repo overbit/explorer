@@ -16,6 +16,7 @@ import { Suspense } from 'react';
 import { SearchBar } from '@/app/components/SearchBarLoader';
 import { TokenInfoBatchProvider } from '@/app/entities/token-info';
 import { CookieConsent } from '@/app/features/cookie';
+import { FeedbackWidget } from '@/app/features/feedback';
 import { VisibilityProvider } from '@/app/shared/lib/visibility';
 import { PageContainer } from '@/app/shared/ui/page-container/PageContainer';
 import { rubikFont } from '@/app/styles';
@@ -55,7 +56,7 @@ export default function RootLayout({ analytics, children }: { analytics: React.R
                                 <TokenInfoBatchProvider>
                                     <ClusterModal />
                                     <PendingCustomUrlConsent />
-                                    <div className="flex min-h-screen flex-col">
+                                    <div className="flex min-h-screen flex-col overflow-x-clip">
                                         <div className="min-w-[292px] flex-1 pb-6">
                                             <Navbar>
                                                 <SearchBar />
@@ -72,6 +73,8 @@ export default function RootLayout({ analytics, children }: { analytics: React.R
                                         <Footer />
                                     </div>
                                     <Toaster position="bottom-center" toastOptions={{ duration: 5_000 }} />
+                                    {/* FeedbackWidget reads the cluster, so it must stay inside ClusterProvider. */}
+                                    <FeedbackWidget />
                                 </TokenInfoBatchProvider>
                             </VisibilityProvider>
                         </ClusterProvider>
