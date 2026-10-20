@@ -1,14 +1,26 @@
 import { Address } from '@components/common/Address';
-import type { BlockWithV1 } from '@entities/block-data';
-import { PublicKey } from '@solana/web3.js';
+import {
+    type BlockData,
+    getBlockTransactionAccounts,
+    getBlockTransactionInstructions,
+    isBlockTransaction,
+    isBlockTransactionAccountWritable,
+} from '@entities/block-data';
+import type { Address as KitAddress } from '@solana/kit';
 import { useClusterPath } from '@utils/url';
 import Link from 'next/link';
 import React from 'react';
 
-import { Button } from '@/app/components/shared/ui/button';
+import {
+    CountWithPercent,
+    GridHeaderRow,
+    LoadMoreButton,
+    percentOf,
+    type ResponsiveCell,
+    ResponsiveGridRow,
+} from '@/app/components/block/shared';
 import { invariant } from '@/app/shared/lib/invariant';
-import { Card, CardFooter, CardHeader, CardTitle } from '@/app/shared/ui/Card';
-import { BaseTable } from '@/app/shared/ui/Table';
+import { DataListCard } from '@/app/shared/ui/DataListCard';
 
 type AccountStats = {
     reads: number;
@@ -17,24 +29,28 @@ type AccountStats = {
 
 const PAGE_SIZE = 25;
 
-export function BlockAccountsCard({ block, blockSlot }: { block: BlockWithV1; blockSlot: number }) {
+// Account takes the slack; the numeric columns are capped. The last column pairs Total with its % of
+// transactions in one wider track. Header + rows share this template so columns stay aligned. Inline
+// (not a `grid-cols-[…]` class) so the Storybook JIT can't purge it.
+const ACCOUNTS_GRID: React.CSSProperties = {
+    gridTemplateColumns: 'minmax(0,1fr) repeat(2, minmax(auto,5rem)) minmax(auto,8.5rem)',
+};
+
+export function BlockAccountsCard({ block, blockSlot }: { block: BlockData; blockSlot: number }) {
     const [numDisplayed, setNumDisplayed] = React.useState(10);
     const totalTransactions = block.transactions.length;
 
     const accountStats = React.useMemo(() => {
-        const statsMap = new Map<string, AccountStats>();
+        const statsMap = new Map<KitAddress, AccountStats>();
         block.transactions.forEach(tx => {
-            const message = tx.transaction.message;
-            const txSet = new Map<string, boolean>();
-            const accountKeys = message.getAccountKeys({
-                accountKeysFromLookups: tx.meta?.loadedAddresses,
-            });
-            message.compiledInstructions.forEach(ix => {
-                ix.accountKeyIndexes.forEach(index => {
-                    const accountKey = accountKeys.get(index);
+            if (!isBlockTransaction(tx)) return;
+            const txSet = new Map<KitAddress, boolean>();
+            const accountKeys = getBlockTransactionAccounts(tx);
+            getBlockTransactionInstructions(tx.message).forEach(ix => {
+                ix.accountIndices.forEach(index => {
+                    const accountKey = accountKeys[index];
                     invariant(accountKey, `account key index ${index} out of range`);
-                    const address = accountKey.toBase58();
-                    txSet.set(address, message.isAccountWritable(index));
+                    txSet.set(accountKey, isBlockTransactionAccountWritable(tx, index));
                 });
             });
 
@@ -49,7 +65,7 @@ export function BlockAccountsCard({ block, blockSlot }: { block: BlockWithV1; bl
             });
         });
 
-        const accountEntries: [string, AccountStats][] = [];
+        const accountEntries: [KitAddress, AccountStats][] = [];
         statsMap.forEach((value, key) => {
             accountEntries.push([key, value]);
         });
@@ -65,61 +81,48 @@ export function BlockAccountsCard({ block, blockSlot }: { block: BlockWithV1; bl
         return accountEntries;
     }, [block]);
 
-    return (
-        <Card ui="dashkit">
-            <CardHeader ui="dashkit">
-                <CardTitle as="h3" ui="dashkit">
-                    Block Account Usage
-                </CardTitle>
-            </CardHeader>
-            <BaseTable ui="dashkit" variant="card" nowrap>
-                <BaseTable.Head>
-                    <BaseTable.Row>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Account</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Read-Write Count</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Read-Only Count</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">Total Count</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="text-dk-gray-700">% of Transactions</BaseTable.HeaderCell>
-                    </BaseTable.Row>
-                </BaseTable.Head>
-                <BaseTable.Body>
-                    {accountStats.slice(0, numDisplayed).map(([address, { writes, reads }]) => (
-                        <StatsRow
-                            address={address}
-                            blockSlot={blockSlot}
-                            key={address}
-                            reads={reads}
-                            totalTransactions={totalTransactions}
-                            writes={writes}
-                        />
-                    ))}
-                </BaseTable.Body>
-            </BaseTable>
+    const visible = accountStats.slice(0, numDisplayed);
+    const hasMore = accountStats.length > numDisplayed;
 
-            {accountStats.length > numDisplayed && (
-                <CardFooter ui="dashkit">
-                    <Button
-                        ui="dashkit"
-                        variant="primary"
-                        className="w-full"
-                        onClick={() => setNumDisplayed(displayed => displayed + PAGE_SIZE)}
-                    >
-                        Load More
-                    </Button>
-                </CardFooter>
-            )}
-        </Card>
+    // Header "Total" carries its % in the cells, not the header, but gets an info icon explaining it.
+    const totalHelp = `Share of the block's ${totalTransactions.toLocaleString('en-US')} processed transactions that used this account.`;
+    const headers: { label: string; help?: string }[] = [
+        { label: 'Account' },
+        { label: 'Read-Write' },
+        { label: 'Read-Only' },
+        { help: totalHelp, label: 'Total' },
+    ];
+
+    return (
+        <DataListCard title="Block Account Usage" breakpoint="md">
+            <div className="text-sm text-white">
+                <GridHeaderRow headers={headers} style={ACCOUNTS_GRID} rightAlignFrom={1} />
+
+                {visible.map(([address, stats]) => (
+                    <AccountsGridRow
+                        address={address}
+                        blockSlot={blockSlot}
+                        key={address}
+                        reads={stats.reads}
+                        totalTransactions={totalTransactions}
+                        writes={stats.writes}
+                    />
+                ))}
+
+                {hasMore && <LoadMoreButton onClick={() => setNumDisplayed(displayed => displayed + PAGE_SIZE)} />}
+            </div>
+        </DataListCard>
     );
 }
 
-function StatsRow({
+function AccountsGridRow({
     address,
     blockSlot,
     writes,
     reads,
     totalTransactions,
 }: {
-    address: string;
+    address: KitAddress;
     blockSlot: number;
     writes: number;
     reads: number;
@@ -129,17 +132,23 @@ function StatsRow({
         additionalParams: new URLSearchParams(`accountFilter=${address}&filter=all`),
         pathname: `/block/${blockSlot}`,
     });
-    return (
-        <BaseTable.Row>
-            <BaseTable.Cell>
-                <Link href={accountPath}>
-                    <Address pubkey={new PublicKey(address)} />
-                </Link>
-            </BaseTable.Cell>
-            <BaseTable.Cell>{writes}</BaseTable.Cell>
-            <BaseTable.Cell>{reads}</BaseTable.Cell>
-            <BaseTable.Cell>{writes + reads}</BaseTable.Cell>
-            <BaseTable.Cell>{((100 * (writes + reads)) / totalTransactions).toFixed(2)}%</BaseTable.Cell>
-        </BaseTable.Row>
+    const total = writes + reads;
+    const totalPct = percentOf(total, totalTransactions);
+    const accountLink = (
+        <Link href={accountPath} className="block min-w-0">
+            <Address address={address} />
+        </Link>
     );
+    const cells: ResponsiveCell[] = [
+        { children: accountLink, desktopClassName: 'min-w-0', key: 'account', label: 'Account' },
+        { children: `${writes}`, desktopClassName: 'text-right', key: 'writes', label: 'Read-Write' },
+        { children: `${reads}`, desktopClassName: 'text-right', key: 'reads', label: 'Read-Only' },
+        {
+            children: <CountWithPercent count={total} percent={totalPct} />,
+            desktopClassName: 'text-right tabular-nums',
+            key: 'total',
+            label: 'Total',
+        },
+    ];
+    return <ResponsiveGridRow cells={cells} gridStyle={ACCOUNTS_GRID} />;
 }

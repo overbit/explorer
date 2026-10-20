@@ -17,7 +17,6 @@ vi.mock('@features/receipt/server', async importOriginal => {
     return {
         ...actual,
         BaseReceiptImage: vi.fn(() => null),
-        OG_IMAGE_SIZE: { height: 630, width: 1200 },
         createReceipt: vi.fn(),
         isReceiptEnabled: true,
     };
@@ -53,6 +52,19 @@ describe('GET /og/receipt/[signature]', () => {
         const request = new NextRequest('http://localhost:3000/og/receipt/not-base58!!!');
 
         const response = await GET(request, { params: Promise.resolve({ signature: 'not-base58!!!' }) });
+
+        expect(response.status).toBe(400);
+        expect(await response.text()).toBe('Invalid transaction signature');
+        expect(createReceipt).not.toHaveBeenCalled();
+    });
+
+    it('should return 400 for a signature with a character outside the base58 alphabet', async () => {
+        const { GET } = await import('../route');
+        const { createReceipt } = await import('@features/receipt/server');
+        const signature = '5xJkP9v71VQpwSxvySDX5hzjZ8vSbnsNJs3EaUSSm9hiaA2c98KlmNQxRtsFgh7Lp';
+        const request = new NextRequest(`http://localhost:3000/og/receipt/${signature}`);
+
+        const response = await GET(request, { params: Promise.resolve({ signature }) });
 
         expect(response.status).toBe(400);
         expect(await response.text()).toBe('Invalid transaction signature');

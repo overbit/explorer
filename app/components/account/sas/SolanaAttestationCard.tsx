@@ -1,8 +1,8 @@
 import { useRefreshAccount } from '@entities/account';
 import { AccountCard } from '@features/account';
+import { Attestation as SasAttestation, Credential as SasCredential, Schema as SasSchema } from '@solana/attestation';
 import { SystemProgram } from '@solana/web3.js';
 import React from 'react';
-import { Attestation as SasAttestation, Credential as SasCredential, Schema as SasSchema } from 'sas-lib';
 
 import { AccountAddressRow } from '@/app/components/common/Account';
 import { Address } from '@/app/components/common/Address';
@@ -41,7 +41,7 @@ function SolanaSchemaCard({ schema }: { schema: SasSchema }) {
         <>
             <BaseTable.Row>
                 <BaseTable.Cell>Schema Name</BaseTable.Cell>
-                <BaseTable.Cell className="text-right">{decodeString(schema.name)}</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">{schema.name}</BaseTable.Cell>
             </BaseTable.Row>
             <BaseTable.Row>
                 <BaseTable.Cell>Credential</BaseTable.Cell>
@@ -51,7 +51,7 @@ function SolanaSchemaCard({ schema }: { schema: SasSchema }) {
             </BaseTable.Row>
             <BaseTable.Row>
                 <BaseTable.Cell>Description</BaseTable.Cell>
-                <BaseTable.Cell className="text-right">{decodeString(schema.description)}</BaseTable.Cell>
+                <BaseTable.Cell className="text-right">{schema.description}</BaseTable.Cell>
             </BaseTable.Row>
             <BaseTable.Row>
                 <BaseTable.Cell>Is Paused</BaseTable.Cell>

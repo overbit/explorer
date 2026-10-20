@@ -8,8 +8,8 @@ import { SolBalance } from '@components/common/SolBalance';
 import { Badge } from '@components/shared/ui/badge';
 import { Button } from '@components/shared/ui/button';
 import { RefreshButton } from '@components/shared/ui/refresh-button';
-import { cn } from '@components/shared/utils';
 import { estimateRequestedComputeUnitsForParsedTransaction } from '@entities/compute-unit';
+import { formatTransactionVersion } from '@entities/transaction-data';
 import {
     BaseResourceFeeProjection,
     derivePriorityFeeLamports,
@@ -19,7 +19,7 @@ import {
 } from '@entities/transaction-fee';
 import { ViewReceiptButton } from '@features/receipt';
 import { FetchStatus } from '@providers/cache';
-import { useCluster, useClusterInfo } from '@providers/cluster';
+import { useCluster, useEpochSchedule } from '@providers/cluster';
 import {
     TransactionStatusInfo,
     useFetchTransactionStatus,
@@ -35,52 +35,18 @@ import { getTransactionInstructionError } from '@utils/program-err';
 import { intoTransactionInstruction } from '@utils/tx';
 import { useBuildClusterPath, useClusterPath } from '@utils/url';
 import Link from 'next/link';
-import React, { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ZoomIn } from 'react-feather';
 
 import { useFetchRawTransaction, useRawTransactionDetails } from '@/app/providers/transactions/raw';
 import { DownloadDropdown } from '@/app/shared/components/DownloadDropdown';
-import { AUTO_REFRESH_INTERVAL, AutoRefresh, WithAutoRefreshProp } from '@/app/shared/lib/use-auto-refresh';
+import { AutoRefresh, useAutoRefreshInterval, WithAutoRefreshProp } from '@/app/shared/lib/use-auto-refresh';
 import { V1_TRANSACTION_SIZE_LIMIT } from '@/app/shared/lib/v1-message-bridge';
 import { Card } from '@/app/shared/ui/Card';
+import { KeyValue, TextValue } from '@/app/shared/ui/key-value';
 import { getEpochForSlot } from '@/app/utils/epoch-schedule';
 
 import { TransactionNotFoundCard } from './TransactionNotFoundCard';
-
-type RowProps = React.HTMLAttributes<HTMLDivElement> & { divider?: boolean };
-export function Row({ children, className, divider, ...props }: RowProps) {
-    return (
-        <div
-            className={cn(
-                'grid min-h-9 grid-cols-[clamp(100px,25%,200px)_1fr] items-baseline gap-2 px-3 py-2.5 md:px-4',
-                divider && 'border-1 border-b border-white/10 [border-bottom-style:solid]',
-                className,
-            )}
-            {...props}
-        >
-            {children}
-        </div>
-    );
-}
-
-function Label({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-    return (
-        <div
-            className={cn('flex flex-wrap items-center gap-1 overflow-hidden text-sm text-outer-space-300', className)}
-            {...props}
-        >
-            {children}
-        </div>
-    );
-}
-
-function Value({ children, className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-    return (
-        <div className={cn('break-all font-mono text-sm text-white', className)} {...props}>
-            {children}
-        </div>
-    );
-}
 
 function getTransactionErrorReason(
     info: TransactionStatusInfo,
@@ -114,7 +80,7 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
     const details = useTransactionDetails(signature);
     const rawDetails = useRawTransactionDetails(signature);
     const { cluster, status: clusterStatus } = useCluster();
-    const clusterInfo = useClusterInfo();
+    const epochSchedule = useEpochSchedule();
     const inspectPath = useClusterPath({ pathname: `/tx/${signature}/inspect` });
     // The error link's target is only known inside the render below, so this needs the callback form.
     const buildClusterPath = useBuildClusterPath();
@@ -128,6 +94,8 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
     // Read the version off the raw details rather than the parsed ones, so the size and the limit it
     // is compared against always come from the same fetch.
     const rawVersion = rawDetails?.data?.raw?.version;
+    const blockTime = rawDetails?.data?.raw?.blockTime ?? details?.data?.transactionWithMeta?.blockTime ?? undefined;
+    const transactionFetchesSucceeded = isFetched(rawDetails) && isFetched(details);
 
     useEffect(() => {
         if (!rawDetails && clusterStatus === ClusterStatus.Connected) {
@@ -141,31 +109,34 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
         }
     }, [signature, clusterStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const rawEntryRef = useRef(rawDetails);
+    rawEntryRef.current = rawDetails;
+    const refresh = useCallback(() => {
+        fetchStatus(signature);
+        const entry = rawEntryRef.current;
+        if (!entry?.data?.raw && entry?.status !== FetchStatus.Fetching) fetchRaw(signature);
+    }, [fetchStatus, fetchRaw, signature]);
+    useAutoRefreshInterval(autoRefresh, refresh);
+
+    // Finality stops auto-refresh, so a raw fetch still open on the last tick gets no retry from the timer.
+    // The ref allows one retry per cache entry, so an RPC that keeps returning nothing is not polled.
+    const isFinalized = status?.data?.info?.confirmations === 'max';
+    const hasRawEntry = rawDetails !== undefined;
+    const isRawSettledEmpty = hasRawEntry && rawDetails.status !== FetchStatus.Fetching && !rawDetails.data?.raw;
+    const finalityRetrySignatureRef = useRef<string>(undefined);
     useEffect(() => {
-        if (autoRefresh === AutoRefresh.Active) {
-            const intervalHandle: NodeJS.Timeout = setInterval(() => fetchStatus(signature), AUTO_REFRESH_INTERVAL);
-            return () => {
-                clearInterval(intervalHandle);
-            };
-        }
-    }, [autoRefresh, fetchStatus, signature]);
+        if (!hasRawEntry) finalityRetrySignatureRef.current = undefined;
+        if (!isFinalized || !isRawSettledEmpty || finalityRetrySignatureRef.current === signature) return;
+        finalityRetrySignatureRef.current = signature;
+        fetchRaw(signature);
+    }, [hasRawEntry, isFinalized, isRawSettledEmpty, signature, fetchRaw]);
 
     if (!status || (status.status === FetchStatus.Fetching && autoRefresh === AutoRefresh.Inactive)) {
         return <LoadingCard />;
     } else if (status.status === FetchStatus.FetchFailed) {
-        return <ErrorCard retry={() => fetchStatus(signature)} text="Fetch Failed" />;
+        return <ErrorCard retry={refresh} text="Fetch Failed" />;
     } else if (!status.data?.info) {
-        return (
-            <TransactionNotFoundCard
-                signature={signature}
-                retry={() => fetchStatus(signature)}
-                firstAvailableBlock={
-                    clusterInfo?.firstAvailableBlock && clusterInfo.firstAvailableBlock > 0n
-                        ? clusterInfo.firstAvailableBlock
-                        : undefined
-                }
-            />
-        );
+        return <TransactionNotFoundCard signature={signature} retry={refresh} />;
     }
 
     const { info } = status.data;
@@ -182,7 +153,7 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
         (transactionWithMeta?.transaction && transactionWithMeta.version !== 1
             ? estimateRequestedComputeUnitsForParsedTransaction(
                   transactionWithMeta.transaction,
-                  clusterInfo ? getEpochForSlot(clusterInfo.epochSchedule, BigInt(info.slot)) : undefined,
+                  epochSchedule ? getEpochForSlot(epochSchedule, BigInt(info.slot)) : undefined,
                   cluster,
               )
             : undefined);
@@ -264,7 +235,7 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
                     <RefreshButton
                         fetching={autoRefresh === AutoRefresh.Active}
                         analyticsSection="transaction_card"
-                        onClick={() => fetchStatus(signature)}
+                        onClick={refresh}
                     />
                     <DownloadDropdown
                         filename={signature}
@@ -280,203 +251,163 @@ export function SummaryCard({ signature, autoRefresh }: SignatureProps & WithAut
             </div>
 
             <Card ui="dashkit">
-                {/* Status */}
-                <Row divider>
-                    <Label>Status</Label>
-                    <Value className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                        <Badge ui="dashkit" variant={statusClass}>
-                            {statusText}
+                <KeyValue label="Status" valueClassName="flex-wrap items-center gap-x-3 gap-y-2">
+                    <Badge ui="dashkit" variant={statusClass}>
+                        {statusText}
+                    </Badge>
+                    {errorReason && (
+                        <Badge
+                            ui="dashkit"
+                            variant={statusClass}
+                            className="min-w-0 max-w-full !whitespace-normal break-words !text-left"
+                        >
+                            {errorLink ? <Link href={errorLink}>{errorReason}</Link> : errorReason}
                         </Badge>
-                        {errorReason && (
-                            <Badge
-                                ui="dashkit"
-                                variant={statusClass}
-                                className="whitespace-normal break-words text-left"
-                            >
-                                {errorLink ? <Link href={errorLink}>{errorReason}</Link> : errorReason}
-                            </Badge>
-                        )}
-                    </Value>
-                </Row>
+                    )}
+                </KeyValue>
 
-                {/* Confirmation */}
-                <Row divider>
-                    <Label>Confirmation</Label>
-                    <Value>{statusFinality}</Value>
-                </Row>
+                <KeyValue label="Confirmation">
+                    <TextValue mono={false}>{statusFinality}</TextValue>
+                </KeyValue>
 
-                {/* Signature */}
-                <Row divider>
-                    <Label>Signature</Label>
-                    <Value>
-                        <Signature signature={signature} alignItems="start" noTruncate />
-                    </Value>
-                </Row>
+                <KeyValue label="Signature">
+                    <Signature signature={signature} alignItems="start" noTruncate />
+                </KeyValue>
 
-                {/* Signed by (fee payer) */}
                 {feePayer && (
-                    <Row divider>
-                        <Label>Fee payer</Label>
-                        <Value>
-                            <Address pubkey={feePayer} link noTruncate />
-                        </Value>
-                    </Row>
+                    <KeyValue label="Fee payer">
+                        <Address pubkey={feePayer} link noTruncate />
+                    </KeyValue>
                 )}
 
-                {/* Slot */}
-                <Row divider>
-                    <Label>Slot</Label>
-                    <Value>
-                        <Slot slot={info.slot} link />
-                    </Value>
-                </Row>
+                <KeyValue label="Slot">
+                    <Slot slot={info.slot} link />
+                </KeyValue>
 
-                {/* Recent Blockhash / Nonce */}
                 {blockhash && (
-                    <Row divider>
-                        <Label className="overflow-visible">
-                            {isNonce ? (
+                    <KeyValue
+                        label={
+                            isNonce ? (
                                 'Nonce'
                             ) : (
                                 <InfoTooltip text="Transactions use a previously confirmed blockhash as a nonce to prevent double spends">
                                     Recent Blockhash
                                 </InfoTooltip>
-                            )}
-                        </Label>
-                        <Value>{blockhash}</Value>
-                    </Row>
+                            )
+                        }
+                    >
+                        <TextValue>{blockhash}</TextValue>
+                    </KeyValue>
                 )}
 
-                {/* Fee */}
                 {fee !== undefined && (
-                    <Row divider>
-                        <Label>Fee</Label>
-                        <Value>
-                            <SolBalance lamports={fee} />
-                        </Value>
-                    </Row>
+                    <KeyValue label="Fee">
+                        <SolBalance lamports={fee} />
+                    </KeyValue>
                 )}
 
                 {/* Projected fee under SIMD-0553's inclusion + burned resource fee model */}
                 {fee !== undefined && feeProjections !== undefined && (
-                    <Row divider>
-                        <Label className="overflow-visible">
+                    <KeyValue
+                        label={
                             <InfoTooltip text="Not active yet. SIMD-0553 would charge a 2,500-lamport inclusion fee to the leader plus a burned resource fee on the cost units a transaction requests, replacing today's flat 5,000-per-signature base fee and leaving the priority fee unchanged. Estimated by swapping this transaction's consumed compute units for its requested limit; the loaded-accounts-data-size term still reflects what it loaded, so each figure is a floor.">
                                 Fee under SIMD-0553
                             </InfoTooltip>
-                        </Label>
-                        <Value>
-                            <BaseResourceFeeProjection currentFeeLamports={fee} projections={feeProjections} />
-                        </Value>
-                    </Row>
+                        }
+                    >
+                        <BaseResourceFeeProjection currentFeeLamports={fee} projections={feeProjections} />
+                    </KeyValue>
                 )}
 
-                {/* Transaction cost */}
                 {costUnits !== undefined && (
-                    <Row divider>
-                        <Label>Transaction cost</Label>
-                        <Value>{costUnits.toLocaleString('en-US')}</Value>
-                    </Row>
+                    <KeyValue label="Transaction cost">
+                        <TextValue>{costUnits.toLocaleString('en-US')}</TextValue>
+                    </KeyValue>
                 )}
 
-                {/* CUs Consumed / Limit */}
                 {computeUnitsConsumed !== undefined && reservedCUs !== undefined && (
-                    <Row divider>
-                        <Label>CUs Consumed / Limit</Label>
-                        <Value>
+                    <KeyValue label="CUs Consumed / Limit">
+                        <TextValue>
                             {computeUnitsConsumed.toLocaleString('en-US')} / {reservedCUs.toLocaleString('en-US')}
-                        </Value>
-                    </Row>
+                        </TextValue>
+                    </KeyValue>
                 )}
                 {computeUnitsConsumed !== undefined && reservedCUs === undefined && (
-                    <Row divider>
-                        <Label>CUs Consumed</Label>
-                        <Value>{computeUnitsConsumed.toLocaleString('en-US')}</Value>
-                    </Row>
+                    <KeyValue label="CUs Consumed">
+                        <TextValue>{computeUnitsConsumed.toLocaleString('en-US')}</TextValue>
+                    </KeyValue>
                 )}
 
                 {/* v1 message-level resource limits */}
                 {transactionConfig?.priorityFeeLamports !== undefined && (
-                    <Row divider>
-                        <Label className="overflow-visible">
+                    <KeyValue
+                        label={
                             <InfoTooltip text="A total amount paid for prioritization, unlike the per-compute-unit price used before v1">
                                 Priority fee (total)
                             </InfoTooltip>
-                        </Label>
-                        <Value>
-                            <SolBalance lamports={transactionConfig.priorityFeeLamports} />
-                        </Value>
-                    </Row>
+                        }
+                    >
+                        <SolBalance lamports={transactionConfig.priorityFeeLamports} />
+                    </KeyValue>
                 )}
                 {transactionConfig?.loadedAccountsDataSizeLimit !== undefined && (
-                    <Row divider>
-                        <Label>Loaded accounts data size limit</Label>
-                        <Value>{transactionConfig.loadedAccountsDataSizeLimit.toLocaleString('en-US')}</Value>
-                    </Row>
+                    <KeyValue label="Loaded accounts data size limit">
+                        <TextValue>{transactionConfig.loadedAccountsDataSizeLimit.toLocaleString('en-US')}</TextValue>
+                    </KeyValue>
                 )}
                 {transactionConfig?.heapSize !== undefined && (
-                    <Row divider>
-                        <Label>Heap size</Label>
-                        <Value>{transactionConfig.heapSize.toLocaleString('en-US')}</Value>
-                    </Row>
+                    <KeyValue label="Heap size">
+                        <TextValue>{transactionConfig.heapSize.toLocaleString('en-US')}</TextValue>
+                    </KeyValue>
                 )}
 
-                {/* Transaction Version */}
                 {version !== undefined && (
-                    <Row divider>
-                        <Label>Transaction Version</Label>
-                        <Value className="uppercase">{formatTransactionVersion(version)}</Value>
-                    </Row>
+                    <KeyValue label="Transaction Version" valueClassName="font-mono uppercase">
+                        {formatTransactionVersion(version)}
+                    </KeyValue>
                 )}
 
-                {/* Transaction size */}
                 {serializedSize !== undefined && (
-                    <Row divider>
-                        <Label className="overflow-visible">
+                    <KeyValue
+                        label={
                             <InfoTooltip text="Size on the wire: signatures plus the compiled message">
                                 Transaction size
                             </InfoTooltip>
-                        </Label>
-                        <Value className="flex flex-wrap items-baseline gap-x-2">
-                            {serializedSize.toLocaleString('en-US')} bytes
-                            {/* No over-limit styling here, unlike the inspector: a transaction that
-                                landed is necessarily within the limit. The cap is context for headroom. */}
-                            <span className="text-xs text-outer-space-300">
-                                Max is {transactionSizeLimit(rawVersion).toLocaleString('en-US')} bytes
-                            </span>
-                        </Value>
-                    </Row>
+                        }
+                        valueClassName="flex-wrap items-baseline gap-x-2 font-mono"
+                    >
+                        {serializedSize.toLocaleString('en-US')} bytes
+                        {/* No over-limit styling here, unlike the inspector: a transaction that landed is
+                            necessarily within the limit. The cap is context for headroom. */}
+                        <span className="text-xs text-outer-space-300">
+                            Max is {transactionSizeLimit(rawVersion).toLocaleString('en-US')} bytes
+                        </span>
+                    </KeyValue>
                 )}
 
-                {/* Timestamp */}
-                {info.timestamp !== 'unavailable' ? (
+                {blockTime !== undefined ? (
                     <>
-                        <Row divider>
-                            <Label>Timestamp (Local)</Label>
-                            <Value>
-                                <span className="font-mono">{displayTimestamp(info.timestamp * 1000, true)}</span>
-                            </Value>
-                        </Row>
-                        <Row>
-                            <Label>Timestamp (UTC)</Label>
-                            <Value>
-                                <span className="font-mono">{displayTimestampUtc(info.timestamp * 1000, true)}</span>
-                            </Value>
-                        </Row>
+                        <KeyValue label="Timestamp (Local)">
+                            <span className="font-mono">{displayTimestamp(blockTime * 1000, true)}</span>
+                        </KeyValue>
+                        <KeyValue label="Timestamp (UTC)" divider={false}>
+                            <span className="font-mono">{displayTimestampUtc(blockTime * 1000, true)}</span>
+                        </KeyValue>
                     </>
-                ) : (
-                    <Row>
-                        <Label>Timestamp</Label>
-                        <Value>
-                            <InfoTooltip bottom text="Timestamps are only available for confirmed blocks">
-                                Unavailable
-                            </InfoTooltip>
-                        </Value>
-                    </Row>
-                )}
+                ) : transactionFetchesSucceeded ? (
+                    <KeyValue label="Timestamp" divider={false}>
+                        <InfoTooltip bottom text="Timestamps are only available for confirmed blocks">
+                            Unavailable
+                        </InfoTooltip>
+                    </KeyValue>
+                ) : undefined}
             </Card>
         </section>
     );
+}
+
+function isFetched(entry?: { status: FetchStatus }): boolean {
+    return entry?.status === FetchStatus.Fetched;
 }
 
 /**
@@ -500,10 +431,6 @@ function readPriorityFeeLamports({
         return undefined;
     }
     return derivePriorityFeeLamports({ feeLamports, signatureCount });
-}
-
-function formatTransactionVersion(version: TransactionVersion): string {
-    return version === 'legacy' ? version : `v${version}`;
 }
 
 /**

@@ -3,6 +3,9 @@ import { none, some } from '@metaplex-foundation/umi';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { gen } from '@/app/__fixtures__/gen';
+import { MAX_SIZE, statusError } from '@/app/api/metadata/proxy';
+import { Logger } from '@/app/shared/lib/logger';
+import { err, ok } from '@/app/shared/lib/result';
 
 const MINT_A = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const MINT_B = 'So11111111111111111111111111111111111111112';
@@ -13,7 +16,7 @@ const VALID_CID = 'QmWATWQ7fVPP2EFGu71UkfnqhYXDYH566qy47CnJDgvs8u';
 
 const mocks = vi.hoisted(() => ({
     fetchResource: vi.fn(),
-    getMultipleParsedAccounts: vi.fn(),
+    getMultipleAccounts: vi.fn(),
     getUmi: vi.fn(() => ({})),
     safeFetchAllMetadata: vi.fn(),
 }));
@@ -30,16 +33,11 @@ vi.mock('@metaplex-foundation/mpl-token-metadata', async () => {
     };
 });
 
-vi.mock('@solana/web3.js', async () => {
-    const actual = await vi.importActual<typeof import('@solana/web3.js')>('@solana/web3.js');
-    return {
-        ...actual,
-        // `Connection` is called with `new`, so the stand-in has to be constructible.
-        Connection: class {
-            getMultipleParsedAccounts = mocks.getMultipleParsedAccounts;
-        },
-    };
-});
+vi.mock('@entities/cluster/@x/token-info', () => ({
+    getRpc: vi.fn(() => ({
+        getMultipleAccounts: (...args: unknown[]) => ({ send: () => mocks.getMultipleAccounts(...args) }),
+    })),
+}));
 
 vi.mock('@/app/entities/nft/lib/umi', () => ({ getUmi: mocks.getUmi }));
 // The off-chain JSON is read through the metadata proxy's hardened fetcher, in process.
@@ -69,7 +67,11 @@ function parsedMint(decimals: number) {
 
 /** Shape `fetchResource` resolves to for a JSON body. */
 function jsonResource(data: unknown) {
-    return { data, headers: new Headers({ 'content-type': 'application/json' }) };
+    return resource(data, 'application/json');
+}
+
+function resource(data: unknown, contentType: string) {
+    return ok({ byteLength: 0, data, headers: new Headers({ 'content-type': contentType }), host: 'example.com' });
 }
 
 async function importSubject() {
@@ -81,7 +83,7 @@ describe('getTokenInfosFromMetaplex', () => {
         vi.clearAllMocks();
         mocks.getUmi.mockReturnValue({});
         mocks.safeFetchAllMetadata.mockResolvedValue([]);
-        mocks.getMultipleParsedAccounts.mockResolvedValue({ value: [] });
+        mocks.getMultipleAccounts.mockResolvedValue({ value: [] });
         mocks.fetchResource.mockResolvedValue(jsonResource({}));
     });
 
@@ -125,7 +127,7 @@ describe('getTokenInfosFromMetaplex', () => {
         mocks.safeFetchAllMetadata
             .mockRejectedValueOnce(new Error('rpc exploded'))
             .mockResolvedValueOnce([metadata(MINT_B)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(9)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(9)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const result = await getTokenInfosFromMetaplex(addresses, RPC, { onError });
@@ -136,7 +138,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should map on-chain metadata into unverified token info', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
         mocks.fetchResource.mockResolvedValueOnce(jsonResource({ image: 'https://example.com/logo.png' }));
 
         const { getTokenInfosFromMetaplex } = await importSubject();
@@ -151,6 +153,12 @@ describe('getTokenInfosFromMetaplex', () => {
                 verified: false,
             },
         ]);
+        expect(Logger.info).toHaveBeenCalledWith('[api:metadata-proxy] Resource fetched', {
+            byteLength: 0,
+            contentType: 'application/json',
+            host: 'example.com',
+            maxSize: MAX_SIZE,
+        });
     });
 
     it('should keep only mints whose token standard is Fungible', async () => {
@@ -158,7 +166,7 @@ describe('getTokenInfosFromMetaplex', () => {
             metadata(MINT_A),
             metadata(MINT_B, { tokenStandard: some(TokenStandard.NonFungible) }),
         ]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const result = await getTokenInfosFromMetaplex([MINT_A, MINT_B], RPC);
@@ -173,14 +181,14 @@ describe('getTokenInfosFromMetaplex', () => {
 
         await expect(getTokenInfosFromMetaplex([MINT_A], RPC)).resolves.toEqual([]);
         // Nothing survived the filter, so the mint accounts are never read.
-        expect(mocks.getMultipleParsedAccounts).not.toHaveBeenCalled();
+        expect(mocks.getMultipleAccounts).not.toHaveBeenCalled();
     });
 
     it('should strip the null padding the metadata program adds', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([
             metadata(MINT_A, { name: `USD Coin${NULL_CHAR.repeat(24)}`, symbol: `USDC${NULL_CHAR.repeat(6)}` }),
         ]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -191,7 +199,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should read decimals from the mint account, including zero', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(0)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(0)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -201,7 +209,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should fall back to 6 decimals when the mint account is missing', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [null] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [null] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -211,7 +219,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should report a null logo when the off-chain JSON has no image', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
         mocks.fetchResource.mockResolvedValueOnce(jsonResource({}));
 
         const { getTokenInfosFromMetaplex } = await importSubject();
@@ -224,7 +232,7 @@ describe('getTokenInfosFromMetaplex', () => {
     // never fetch the mint's URI outside the proxy's hardened fetcher.
     it('should read the off-chain JSON through the proxy fetcher, bounded by the timeout', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex, METAPLEX_TIMEOUT_MS } = await importSubject();
         await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -238,7 +246,7 @@ describe('getTokenInfosFromMetaplex', () => {
     it('should keep the off-chain reads within the concurrency limit', async () => {
         const addresses = Array.from({ length: 20 }, (_, i) => gen.address(i));
         mocks.safeFetchAllMetadata.mockResolvedValueOnce(addresses.map(address => metadata(address)));
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: addresses.map(() => parsedMint(6)) });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: addresses.map(() => parsedMint(6)) });
 
         let inFlight = 0;
         let peak = 0;
@@ -260,7 +268,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should keep every logo with its own mint when the reads settle out of order', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A), metadata(MINT_B)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6), parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6), parsedMint(6)] });
         mocks.fetchResource
             .mockImplementationOnce(
                 () => new Promise(resolve => setTimeout(() => resolve(jsonResource({ image: 'logo-a' })), 10)),
@@ -280,7 +288,7 @@ describe('getTokenInfosFromMetaplex', () => {
         vi.useFakeTimers();
         try {
             mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A), metadata(MINT_B)]);
-            mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6), parsedMint(6)] });
+            mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6), parsedMint(6)] });
 
             const { getTokenInfosFromMetaplex, LOGO_BUDGET_MS } = await importSubject();
             mocks.fetchResource.mockImplementationOnce(async () => {
@@ -301,27 +309,47 @@ describe('getTokenInfosFromMetaplex', () => {
         }
     });
 
-    it('should report a null logo when the proxy fetcher rejects the address', async () => {
+    it('should report a null logo when the proxy fetcher throws', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
-        // What `fetchResource` does for a private host or a redirect loop.
-        mocks.fetchResource.mockRejectedValueOnce(new Error('Hostname resolves to a private IP'));
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        const failure = new Error('terminated');
+        mocks.fetchResource.mockRejectedValueOnce(failure);
         const onError = vi.fn();
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC, { onError });
 
         expect(result).toMatchObject({ address: MINT_A, logoURI: null });
-        expect(onError).toHaveBeenCalledWith(expect.any(Error));
+        expect(onError).toHaveBeenCalledWith(failure);
+    });
+
+    it('should report a null logo and log a blocked address only through the proxy log policy', async () => {
+        mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        // What `fetchResource` returns for a private host.
+        const context = { hostname: 'blocked.example', reason: 'private address 10.0.0.1' };
+        const blocked = statusError(403, 'Hostname resolution blocked: private address 10.0.0.1', {
+            code: 'ssrf-blocked',
+            context,
+        });
+        mocks.fetchResource.mockResolvedValueOnce(err(blocked));
+        const onError = vi.fn();
+
+        const { getTokenInfosFromMetaplex } = await importSubject();
+        const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC, { onError });
+
+        expect(result).toMatchObject({ address: MINT_A, logoURI: null });
+        expect(onError).not.toHaveBeenCalled();
+        expect(Logger.warn).toHaveBeenCalledWith(
+            '[api:metadata-proxy] Hostname resolution blocked (SSRF protection)',
+            context,
+        );
     });
 
     it('should ignore a non-JSON body rather than treat it as metadata', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
-        mocks.fetchResource.mockResolvedValueOnce({
-            data: { image: 'https://example.com/logo.png' },
-            headers: new Headers({ 'content-type': 'text/html' }),
-        });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.fetchResource.mockResolvedValueOnce(resource({ image: 'https://example.com/logo.png' }, 'text/html'));
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -331,7 +359,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should skip the off-chain read for a mint with no uri', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A, { uri: '' })]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -345,7 +373,7 @@ describe('getTokenInfosFromMetaplex', () => {
     // path already maps these through a gateway in `getProxiedUri`; this path must match it.
     it('should read an ipfs uri through the http gateway', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A, { uri: `ipfs://${VALID_CID}/meta.json` })]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
         mocks.fetchResource.mockResolvedValueOnce(jsonResource({ image: 'https://example.com/logo.png' }));
 
         const { getTokenInfosFromMetaplex } = await importSubject();
@@ -360,7 +388,7 @@ describe('getTokenInfosFromMetaplex', () => {
 
     it('should skip the off-chain read for an ipfs uri with a malformed CID', async () => {
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A, { uri: 'ipfs://not-a-valid-cid' })]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC);
@@ -372,7 +400,7 @@ describe('getTokenInfosFromMetaplex', () => {
     it('should skip the off-chain read for an unparseable uri', async () => {
         const onError = vi.fn();
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A, { uri: 'not-a-url' })]);
-        mocks.getMultipleParsedAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
+        mocks.getMultipleAccounts.mockResolvedValueOnce({ value: [parsedMint(6)] });
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC, { onError });
@@ -396,7 +424,7 @@ describe('getTokenInfosFromMetaplex', () => {
     it('should keep the token when reading its decimals fails', async () => {
         const onError = vi.fn();
         mocks.safeFetchAllMetadata.mockResolvedValueOnce([metadata(MINT_A)]);
-        mocks.getMultipleParsedAccounts.mockRejectedValueOnce(new Error('rpc exploded'));
+        mocks.getMultipleAccounts.mockRejectedValueOnce(new Error('rpc exploded'));
 
         const { getTokenInfosFromMetaplex } = await importSubject();
         const [result] = await getTokenInfosFromMetaplex([MINT_A], RPC, { onError });
