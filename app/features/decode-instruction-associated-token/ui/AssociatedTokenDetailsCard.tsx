@@ -1,11 +1,11 @@
-import { Address } from '@components/common/Address';
-import { InstructionCard } from '@components/instruction/InstructionCard';
-import { UnknownDetailsCard } from '@components/instruction/UnknownDetailsCard';
-import { ProgramField } from '@entities/instruction-card';
-import { type ParsedInstruction, PublicKey, type SignatureResult, type TransactionInstruction } from '@solana/web3.js';
-import React from 'react';
-
-import { BaseTable } from '@/app/shared/ui/Table';
+import {
+    address,
+    InstructionCardView,
+    InstructionFields,
+    type InstructionNode,
+    UnknownDetailsCard,
+} from '@entities/instruction-card';
+import { PublicKey } from '@solana/web3.js';
 
 import type { AssociatedTokenParsed } from '../lib/associated-token-parser';
 import type { CreateAccountsInfo, RecoverNestedInfo } from '../lib/types';
@@ -39,94 +39,32 @@ const VARIANTS = {
     recoverNested: { fields: RECOVER_NESTED_FIELDS, title: 'Associated Token Program: Recover Nested' },
 } satisfies Record<AssociatedTokenParsed['type'], { fields: ReadonlyArray<readonly [string, string]>; title: string }>;
 
-/** Props the injected card shell must accept. Satisfied by both shells. */
-type CardShellProps = React.PropsWithChildren<{
-    childIndex?: number;
-    index: number;
-    innerCards?: JSX.Element[];
-    ix: ParsedInstruction;
-    raw?: TransactionInstruction;
-    result: SignatureResult;
-    title: string;
-}>;
-
 type Props = {
+    node: InstructionNode;
     /** Already decoded by the dispatcher — this card does not decode. */
-    ix: ParsedInstruction;
-    index: number;
-    result: SignatureResult;
-    innerCards?: JSX.Element[];
-    childIndex?: number;
-    raw?: TransactionInstruction;
-    InstructionCardComponent?: React.ComponentType<CardShellProps>;
+    parsed: unknown;
 };
 
-/**
- * Presentational card for an Associated Token instruction. `ix` normally arrives
- * already decoded into the slice's canonical `AssociatedTokenParsed` shape, so
- * this component only maps named fields onto labelled rows — it never re-decodes
- * and never indexes accounts positionally.
- *
- * It cannot blindly trust that shape, though: when this slice's parser rejects a
- * payload, `createInstructionParserDispatcher` falls back to RPC's raw view, which
- * still carries a familiar `type` but holds un-coerced base58 strings instead of
- * `PublicKey`s. So the shape is checked, and anything unrecognised degrades to the
- * unknown-instruction card rather than throwing mid-render.
- */
-export function AssociatedTokenDetailsCard({
-    ix,
-    index,
-    result,
-    innerCards,
-    childIndex,
-    raw,
-    InstructionCardComponent = InstructionCard,
-}: Props) {
-    const parsed = ix.parsed as { info?: Record<string, unknown>; type?: string };
-    const variant = VARIANTS[parsed.type as AssociatedTokenParsed['type']];
-    const info = parsed.info;
+export function AssociatedTokenDetailsCard({ node, parsed }: Props) {
+    const { info, type } = parsed as { info?: Record<string, unknown>; type?: string };
+    const variant = VARIANTS[type as AssociatedTokenParsed['type']];
 
     // Every field this variant renders must already be a coerced PublicKey. If any
-    // is not, `ix` is RPC's raw fallback rather than this slice's output. Only the
-    // tx page can reach this: the inspector's `fromTransactionInstruction` reports
-    // failures as `{ unknown: true }`, which its section handles before this card.
+    // is not, `parsed` is RPC's raw fallback rather than this slice's output. Only the
+    // tx page can reach this: `fromTransactionInstruction` reports
+    // failures as `{ unknown: true }`, which the router handles before this card.
     const isCanonical = Boolean(variant && info && variant.fields.every(([, f]) => info[f] instanceof PublicKey));
 
     if (!variant || !info || !isCanonical) {
-        return (
-            <UnknownDetailsCard
-                ix={ix}
-                index={index}
-                result={result}
-                innerCards={innerCards}
-                childIndex={childIndex}
-                // Both real shells accept these props; the declared types differ only
-                // in `innerCards` (ReactNode[] vs JSX.Element[]), which this call does
-                // not rely on.
-                InstructionCardComponent={InstructionCardComponent as React.FC<Parameters<typeof InstructionCard>[0]>}
-            />
-        );
+        return <UnknownDetailsCard node={node} />;
     }
 
     return (
-        <InstructionCardComponent
-            ix={ix}
-            index={index}
-            result={result}
-            title={variant.title}
-            innerCards={innerCards}
-            childIndex={childIndex}
-            raw={raw}
-        >
-            <ProgramField programId={ix.programId} />
-            {variant.fields.map(([label, field]) => (
-                <BaseTable.Row key={field}>
-                    <BaseTable.Cell>{label}</BaseTable.Cell>
-                    <BaseTable.Cell className="text-right">
-                        <Address pubkey={info[field] as PublicKey} alignRight link />
-                    </BaseTable.Cell>
-                </BaseTable.Row>
-            ))}
-        </InstructionCardComponent>
+        <InstructionCardView node={node} title={variant.title}>
+            <InstructionFields
+                programId={node.programId}
+                fields={variant.fields.map(([label, field]) => address(label, info[field] as PublicKey))}
+            />
+        </InstructionCardView>
     );
 }

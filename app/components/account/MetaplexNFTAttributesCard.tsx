@@ -3,16 +3,26 @@ import { LoadingCard } from '@components/common/LoadingCard';
 import { Account, isTokenProgramData } from '@providers/accounts';
 import React from 'react';
 
-import { getProxiedUri } from '@/app/features/metadata/utils';
 import { useCluster } from '@/app/providers/cluster';
 import { useCompressedNft } from '@/app/providers/compressed-nft';
-import { Card, CardHeader, CardTitle } from '@/app/shared/ui/Card';
-import { BaseTable } from '@/app/shared/ui/Table';
+import { getProxiedUri } from '@/app/shared/lib/metadata-proxy';
+import { GridTableCard, type GridTableColumn } from '@/app/shared/ui/grid-table';
 
 interface Attribute {
     trait_type: string;
     value: string;
 }
+
+const COLUMNS: ReadonlyArray<GridTableColumn<Attribute>> = [
+    {
+        header: 'Trait type',
+        render: ({ trait_type }) => trait_type,
+    },
+    {
+        header: 'Value',
+        render: ({ value }) => value,
+    },
+];
 
 export function MetaplexNFTAttributesCard({ account, onNotFound }: { account?: Account; onNotFound: () => never }) {
     const { url } = useCluster();
@@ -31,11 +41,14 @@ export function MetaplexNFTAttributesCard({ account, onNotFound }: { account?: A
 export function NormalMetaplexNFTAttributesCard({ metadataUri }: { metadataUri: string }) {
     const [attributes, setAttributes] = React.useState<Attribute[]>([]);
     const [status, setStatus] = React.useState<'loading' | 'success' | 'error'>('loading');
+    const [attempt, setAttempt] = React.useState(0);
 
-    async function fetchMetadataAttributes() {
+    async function fetchMetadataAttributes(isCancelled: () => boolean) {
         try {
-            const response = await fetch(getProxiedUri(metadataUri));
+            // The browser caches a proxy error response, so a retry must skip the cache.
+            const response = await fetch(getProxiedUri(metadataUri), attempt > 0 ? { cache: 'no-cache' } : undefined);
             const metadata = await response.json();
+            if (isCancelled()) return;
 
             // Verify if the attributes value is an array
             if (Array.isArray(metadata.attributes)) {
@@ -54,48 +67,40 @@ export function NormalMetaplexNFTAttributesCard({ metadataUri }: { metadataUri: 
                 throw new Error('Attributes is not an array');
             }
         } catch (_error) {
-            setStatus('error');
+            if (!isCancelled()) setStatus('error');
         }
     }
 
+    function retryAttributes() {
+        setStatus('loading');
+        setAttempt(count => count + 1);
+    }
+
     React.useEffect(() => {
-        fetchMetadataAttributes();
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        let cancelled = false;
+        setStatus('loading');
+        fetchMetadataAttributes(() => cancelled);
+        return () => {
+            cancelled = true;
+        };
+    }, [metadataUri, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (status === 'loading') {
         return <LoadingCard />;
     }
 
     if (status === 'error') {
-        return <ErrorCard text="Failed to fetch attributes" />;
+        return <ErrorCard retry={retryAttributes} text="Failed to fetch attributes" />;
     }
 
-    const attributesList: React.ReactNode[] = attributes.map(({ trait_type, value }) => {
-        return (
-            <BaseTable.Row key={`${trait_type}:${value}`}>
-                <BaseTable.Cell>{trait_type}</BaseTable.Cell>
-                <BaseTable.Cell>{value}</BaseTable.Cell>
-            </BaseTable.Row>
-        );
-    });
-
     return (
-        <Card ui="dashkit">
-            <CardHeader ui="dashkit">
-                <CardTitle as="h3" ui="dashkit">
-                    Attributes
-                </CardTitle>
-            </CardHeader>
-            <BaseTable ui="dashkit" variant="card" nowrap>
-                <BaseTable.Head>
-                    {/* w-[1%] (not the usual w-px): two shrink columns share this table, and 1px vs 1% distributes leftover width differently */}
-                    <BaseTable.Row>
-                        <BaseTable.HeaderCell className="w-[1%] text-dk-gray-700">Trait type</BaseTable.HeaderCell>
-                        <BaseTable.HeaderCell className="w-[1%] text-dk-gray-700">Value</BaseTable.HeaderCell>
-                    </BaseTable.Row>
-                </BaseTable.Head>
-                <BaseTable.Body>{attributesList}</BaseTable.Body>
-            </BaseTable>
-        </Card>
+        <GridTableCard
+            title="Attributes"
+            ariaLabel="Attributes"
+            gridTemplate="grid-cols-[auto_1fr]"
+            columns={COLUMNS}
+            rows={attributes}
+            getRowKey={({ trait_type, value }) => `${trait_type}:${value}`}
+        />
     );
 }

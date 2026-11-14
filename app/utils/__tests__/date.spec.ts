@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { displayTimestampAbsolute, displayTimestampRelative, formatDuration, formatRelativeTime } from '../date';
+import {
+    displayDateUtc,
+    displayTimestampAbsolute,
+    displayTimestampRelative,
+    formatDuration,
+    formatRelativeTime,
+} from '../date';
 
 const NOW = new Date('2026-05-25T12:00:00Z').getTime();
 const SECOND = 1_000;
@@ -132,6 +138,12 @@ describe('displayTimestampRelative', () => {
         expect(displayTimestampRelative(NOW - 200, NOW)).toBe('just now');
     });
 
+    it('should render a few seconds of elapsed time with the second value', () => {
+        expect(displayTimestampRelative(NOW - SECOND, NOW)).toBe('1 second ago');
+        expect(displayTimestampRelative(NOW - 2 * SECOND, NOW)).toBe('2 seconds ago');
+        expect(displayTimestampRelative(NOW + 2 * SECOND, NOW)).toBe('in 2 seconds');
+    });
+
     it('should return an empty string for non-finite inputs', () => {
         expect(displayTimestampRelative(NaN, NOW)).toBe('');
         expect(displayTimestampRelative(NOW, Infinity)).toBe('');
@@ -142,5 +154,17 @@ describe('displayTimestampRelative', () => {
 describe('displayTimestampAbsolute', () => {
     it('should render a UTC instant in date-first order with a short zone name', () => {
         expect(displayTimestampAbsolute(NOW, true)).toBe('May 25, 2026 at 12:00:00 UTC');
+    });
+});
+
+describe('displayDateUtc', () => {
+    it('should print a millisecond timestamp as a short UTC date', () => {
+        // 2026-08-26T11:32:13Z
+        expect(displayDateUtc(1_787_743_933 * SECOND)).toBe('Aug 26, 2026');
+    });
+
+    it('should read the day in UTC, not the local zone', () => {
+        // 2026-01-01T00:30:00Z stays Jan 1 regardless of the runner's timezone.
+        expect(displayDateUtc(1_767_227_400 * SECOND)).toBe('Jan 1, 2026');
     });
 });

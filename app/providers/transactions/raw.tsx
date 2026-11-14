@@ -37,7 +37,9 @@ export function RawDetailsProvider({ children }: DetailsProviderProps) {
     );
 }
 
-export function useRawTransactionDetails(signature: TransactionSignature): Cache.CacheEntry<Details> | undefined {
+export function useRawTransactionDetails(
+    signature: TransactionSignature | undefined,
+): Cache.CacheEntry<Details> | undefined {
     const context = React.useContext(StateContext);
 
     if (!context) {
@@ -63,7 +65,7 @@ async function loadRawTransaction(
 
     let fetchStatus;
     try {
-        const raw = await fetchRawTransaction(url, signature, commitment);
+        const raw = await fetchRawTransaction(url, signature, { commitment });
         fetchStatus = FetchStatus.Fetched;
 
         dispatch({

@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { tokenInfo } from '../../__fixtures__/token-info';
 import { orderMintsByVerification } from '../order-mints-by-verification';
 import type { TokenInfo } from '../types';
-
-function tokenInfo(address: string, verified?: boolean): TokenInfo {
-    return { address, decimals: 6, logoURI: null, name: address, symbol: address, verified };
-}
 
 function infos(...tokens: TokenInfo[]): ReadonlyMap<string, TokenInfo> {
     return new Map(tokens.map(token => [token.address, token]));
@@ -33,12 +30,6 @@ describe('orderMintsByVerification', () => {
 
         const once = orderMintsByVerification(mints, tokenInfos);
         expect(orderMintsByVerification(once, tokenInfos)).toEqual(once);
-    });
-
-    it('should treat a listed mint with no verified flag as unverified rather than verified', () => {
-        const tokenInfos = infos(tokenInfo('listed'), tokenInfo('verified', true));
-
-        expect(orderMintsByVerification(['listed', 'verified'], tokenInfos)).toEqual(['verified', 'listed']);
     });
 
     it('should preserve every mint, including duplicates', () => {

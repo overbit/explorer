@@ -1,49 +1,61 @@
-import { Address } from '@components/common/Address';
-import { InstructionCard } from '@components/instruction/InstructionCard';
 import {
-    type DecodedSerumInstruction,
-    decodeSerumInstruction,
-    getSerumInstructionLabel,
-    isKnownUndecodableSerumInstruction,
-    OPENBOOK_DEX_PROGRAM_LABEL,
-} from '@explorer/decoder-serum';
-import { useCluster } from '@providers/cluster';
-import { type PublicKey, type SignatureResult, type TransactionInstruction } from '@solana/web3.js';
+    address,
+    addresses,
+    InstructionCardView,
+    type InstructionField,
+    InstructionFields,
+    type InstructionNode,
+    NameOnlyDetailsCard,
+    text,
+} from '@entities/instruction-card';
+import type { ParsedInstructionInfo } from '@entities/instruction-parser';
+import { isDeprecatedSerumProgram, OPENBOOK_DEX_PROGRAM_LABEL, SERUM_INSTRUCTION_NAMES } from '@explorer/decoder-serum';
+import type { Address } from '@solana/kit';
 import React from 'react';
 
-import { Logger } from '@/app/shared/lib/logger';
-import { BaseTable } from '@/app/shared/ui/Table';
+import type { SerumParsed } from '../lib/serum-parser';
 
-const isUpperCase = (letter: string): boolean => letter !== letter.toLowerCase();
-// e.g. `openOrdersOwner` → "Open Orders Owner"
-const fieldLabel = (field: string): string => {
-    const spaced = [...field].map(letter => (isUpperCase(letter) ? ` ${letter}` : letter)).join('');
-    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+type SerumDetailsCardProps = {
+    node: InstructionNode;
+    /** `undefined` when the parser of the program cannot decode the instruction. */
+    parsed: ParsedInstructionInfo | undefined;
 };
 
-function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
+export function SerumDetailsCard({ node, parsed }: SerumDetailsCardProps) {
+    const parsedInfo = parsed as SerumParsed | undefined;
+    const name = parsedInfo ? SERUM_INSTRUCTION_NAMES[parsedInfo.type] : 'Unknown';
+
+    // Dead Serum DEX deployments get a name-only card; the active OpenBook fork keeps full decoding.
+    if (isDeprecatedSerumProgram(node.programId.toBase58())) {
+        return <NameOnlyDetailsCard node={node} name={name} />;
+    }
+
+    const title = `${OPENBOOK_DEX_PROGRAM_LABEL} Program: ${name}`;
+    if (!parsedInfo || !('accounts' in parsedInfo.info)) {
+        return <InstructionCardView node={node} title={title} />;
+    }
+
+    const { info } = parsedInfo;
     return (
-        <BaseTable.Row>
-            <BaseTable.Cell>{label}</BaseTable.Cell>
-            <BaseTable.Cell className="text-right">{children}</BaseTable.Cell>
-        </BaseTable.Row>
+        <InstructionCardView node={node} title={title}>
+            <InstructionFields
+                programId={node.programId}
+                fields={[...accountFields(info.accounts), ...('data' in info ? dataFields(info.data) : [])]}
+            />
+        </InstructionCardView>
     );
 }
 
-function AccountRows({ accounts }: { accounts: Record<string, PublicKey | PublicKey[] | undefined> }) {
-    return (
-        <>
-            {Object.entries(accounts)
-                .filter((entry): entry is [string, PublicKey | PublicKey[]] => entry[1] !== undefined)
-                .map(([field, value]) => (
-                    <FieldRow key={field} label={fieldLabel(field)}>
-                        {(Array.isArray(value) ? value : [value]).map((pubkey, i) => (
-                            <Address key={i} pubkey={pubkey} alignRight link />
-                        ))}
-                    </FieldRow>
-                ))}
-        </>
-    );
+function accountFields(accounts: Record<string, Address | Address[] | undefined>): InstructionField[] {
+    return Object.entries(accounts).flatMap(([field, value]) => {
+        if (value === undefined) return [];
+        if (!Array.isArray(value)) return [address(fieldLabel(field), value)];
+        return value.length > 0 ? [addresses(fieldLabel(field), value)] : [];
+    });
+}
+
+function dataFields(data: Record<string, string | number | bigint>): InstructionField[] {
+    return Object.entries(data).map(([field, value]) => text(fieldLabel(field), formatDataValue(field, value)));
 }
 
 // Enums decode to lowerCamelCase strings (numeric fields stay number/bigint); humanize them like labels, keeping `side`'s BUY/SELL convention.
@@ -52,58 +64,12 @@ function formatDataValue(field: string, value: string | number | bigint): string
     return field === 'side' ? value.toUpperCase() : fieldLabel(value);
 }
 
-function DataRows({ data }: { data: Record<string, string | number | bigint> }) {
-    return (
-        <>
-            {Object.entries(data).map(([field, value]) => (
-                <FieldRow key={field} label={fieldLabel(field)}>
-                    {formatDataValue(field, value)}
-                </FieldRow>
-            ))}
-        </>
-    );
+// e.g. `openOrdersOwner` → "Open Orders Owner"
+function fieldLabel(field: string): string {
+    const spaced = [...field].map(letter => (isUpperCase(letter) ? ` ${letter}` : letter)).join('');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-export function SerumDetailsCard(props: {
-    ix: TransactionInstruction;
-    index: number;
-    result: SignatureResult;
-    signature: string;
-    innerCards?: JSX.Element[];
-    childIndex?: number;
-}) {
-    const { ix, index, result, signature, innerCards, childIndex } = props;
-    const { url } = useCluster();
-
-    let decoded: DecodedSerumInstruction | undefined;
-    try {
-        decoded = decodeSerumInstruction(ix);
-    } catch (error) {
-        // Codes 7/8/9/13 have no serum-lib layout and always throw here — telemetry only for unexpected failures.
-        if (!isKnownUndecodableSerumInstruction(ix)) {
-            Logger.error(error, { index, sentry: true, signature, url });
-        }
-    }
-
-    return (
-        <InstructionCard
-            ix={ix}
-            index={index}
-            result={result}
-            title={`${OPENBOOK_DEX_PROGRAM_LABEL} Program: ${getSerumInstructionLabel(ix)}`}
-            innerCards={innerCards}
-            childIndex={childIndex}
-            defaultRaw={decoded === undefined}
-        >
-            {decoded && (
-                <>
-                    <FieldRow label="Program">
-                        <Address pubkey={decoded.info.programId} alignRight link />
-                    </FieldRow>
-                    <AccountRows accounts={decoded.info.accounts} />
-                    {'data' in decoded.info && <DataRows data={decoded.info.data} />}
-                </>
-            )}
-        </InstructionCard>
-    );
+function isUpperCase(letter: string): boolean {
+    return letter !== letter.toLowerCase();
 }

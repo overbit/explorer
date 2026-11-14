@@ -2,7 +2,6 @@
 
 import { ErrorCard } from '@components/common/ErrorCard';
 import { LoadingCard } from '@components/common/LoadingCard';
-import { SignatureContext } from '@components/instruction/SignatureContext';
 import { buildExplorerLink, useExplorerLink } from '@entities/cluster';
 import { FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
@@ -13,20 +12,20 @@ import { Cluster, clusterName, ClusterStatus } from '@utils/cluster';
 import { useClusterPath } from '@utils/url';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect } from 'react';
-import useSWR from 'swr';
 
 import { formatUsdValue, PriceStatus, USD_FALLBACK, useTokenPrice } from '@/app/entities/token-price';
 import { getReceiptAmount, getReceiptMint } from '@/app/entities/token-receipt';
-import { getProxiedUri } from '@/app/features/metadata';
 import { receiptAnalytics } from '@/app/shared/lib/analytics';
 import { Logger } from '@/app/shared/lib/logger';
+import { getProxiedUri } from '@/app/shared/lib/metadata-proxy';
 import { AutoRefresh, useAutoRefreshInterval, type WithAutoRefreshProp } from '@/app/shared/lib/use-auto-refresh';
 import { NATIVE_MINT_ADDRESS } from '@/app/shared/model/token-program';
 
 import { generateReceiptCsv } from './lib/generate-receipt-csv';
 import { generateReceiptPdf, loadPdfDeps } from './lib/generate-receipt-pdf';
 import { usePrimaryDomain } from './lib/use-primary-domain';
-import { extractReceiptData, type ReceiptUnavailabilityReason } from './model/receipt-data';
+import { type ReceiptUnavailabilityReason } from './model/receipt-data';
+import { useReceiptResult } from './model/use-receipt-result';
 import type { FormattedReceipt } from './types';
 import { NoReceipt } from './ui/BaseReceipt';
 import { ReceiptView } from './ui/ReceiptView';
@@ -40,18 +39,11 @@ export function Receipt({ signature, autoRefresh }: ReceiptProps & WithAutoRefre
     const fetchDetails = useFetchTransactionDetails();
     const status = useTransactionStatus(signature);
     const details = useTransactionDetails(signature);
-    const { status: clusterStatus, cluster } = useCluster();
+    const { status: clusterStatus } = useCluster();
     const transactionPath = useClusterPath({ pathname: `/tx/${signature}` });
 
     const tx = details?.data?.transactionWithMeta;
-    const { data: receiptResult, isLoading: isReceiptLoading } = useSWR(
-        tx ? ['receipt', signature, cluster] : null,
-        () => {
-            if (!tx) return undefined;
-            return extractReceiptData(tx, cluster);
-        },
-        { revalidateOnFocus: false },
-    );
+    const { data: receiptResult, isLoading: isReceiptLoading } = useReceiptResult(signature, tx);
     const receipt = receiptResult?.kind === 'ok' ? receiptResult.receipt : undefined;
 
     useEffect(() => {
@@ -202,31 +194,29 @@ function ReceiptContent({ receipt, signature, status, transactionPath }: Receipt
     }, [receipt, signature, transactionPath, usdValue, cluster]);
 
     return (
-        <SignatureContext.Provider value={signature}>
-            <ReceiptView
-                data={{
-                    ...receipt,
-                    confirmationStatus: status.data?.info?.confirmationStatus,
-                    logoURI,
-                    receiver: { ...receipt.receiver, domain: receiverDomain },
-                    receiverHref: receiverLink.link,
-                    sender: { ...receipt.sender, domain: senderDomain },
-                    senderHref: senderLink.link,
-                    tokenHref: tokenLink.link,
-                    transfers: receipt.transfers?.map(t => ({
-                        amount: t.amount,
-                        receiver: t.receiver,
-                        receiverHref: makeAddressHref(t.receiver.address),
-                        sender: t.sender,
-                        senderHref: makeAddressHref(t.sender.address),
-                    })),
-                }}
-                downloadCsv={downloadCsv}
-                downloadPdf={downloadPdf}
-                isPriceLoading={isPriceLoading}
-                signature={signature}
-                transactionPath={transactionPath}
-            />
-        </SignatureContext.Provider>
+        <ReceiptView
+            data={{
+                ...receipt,
+                confirmationStatus: status.data?.info?.confirmationStatus,
+                logoURI,
+                receiver: { ...receipt.receiver, domain: receiverDomain },
+                receiverHref: receiverLink.link,
+                sender: { ...receipt.sender, domain: senderDomain },
+                senderHref: senderLink.link,
+                tokenHref: tokenLink.link,
+                transfers: receipt.transfers?.map(t => ({
+                    amount: t.amount,
+                    receiver: t.receiver,
+                    receiverHref: makeAddressHref(t.receiver.address),
+                    sender: t.sender,
+                    senderHref: makeAddressHref(t.sender.address),
+                })),
+            }}
+            downloadCsv={downloadCsv}
+            downloadPdf={downloadPdf}
+            isPriceLoading={isPriceLoading}
+            signature={signature}
+            transactionPath={transactionPath}
+        />
     );
 }

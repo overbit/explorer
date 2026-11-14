@@ -26,6 +26,7 @@ export type TransactionHistoryRowView = {
 export type BaseTransactionHistoryCardProps = {
     rows: TransactionHistoryRowView[];
     fetching: boolean;
+    failed?: boolean;
     foundOldest: boolean;
     onRefresh: () => void;
     onLoadMore: () => void;
@@ -47,6 +48,7 @@ export function historyGridCols(hasTimestamps: boolean): string {
 export function BaseTransactionHistoryCard({
     rows,
     fetching,
+    failed,
     foundOldest,
     onRefresh,
     onLoadMore,
@@ -73,6 +75,8 @@ export function BaseTransactionHistoryCard({
         </div>
     ) : undefined;
 
+    const isEmptyHistory = isEmpty && foundOldest;
+
     const footer = (
         <div
             className={cn(
@@ -83,7 +87,11 @@ export function BaseTransactionHistoryCard({
                 isEmpty && 'py-12',
             )}
         >
-            <HistoryCardFooterContent fetching={fetching} foundOldest={foundOldest} loadMore={onLoadMore} />
+            {isEmptyHistory ? (
+                <div className="text-center text-outer-space-300">No transactions found</div>
+            ) : (
+                <HistoryCardFooterContent fetching={fetching} foundOldest={foundOldest} loadMore={onLoadMore} />
+            )}
         </div>
     );
 
@@ -98,6 +106,7 @@ export function BaseTransactionHistoryCard({
                         analyticsSection="transaction_history_header"
                         onClick={onRefresh}
                         fetching={fetching}
+                        failed={failed}
                     />
                 </>
             }

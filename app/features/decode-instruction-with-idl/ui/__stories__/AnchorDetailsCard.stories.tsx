@@ -1,11 +1,15 @@
 import { gen } from '@__fixtures__/gen';
 import { AnchorProvider, Idl, Program } from '@coral-xyz/anchor';
+import { toRawInstructionNode } from '@entities/instruction-card';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { nextjsParameters, withMockTransactions, withTokenInfoBatch } from '@storybook-config/decorators';
+import {
+    nextjsParameters,
+    withMockTransactions,
+    withTokenInfoBatch,
+    withTxInstructionSurface,
+} from '@storybook-config/decorators';
 import type { Meta, StoryObj } from '@storybook-config/types';
-import React from 'react';
 
-import { SignatureContext } from '@/app/components/instruction/SignatureContext';
 import anchor030Devi from '@/app/entities/idl/mocks/anchor/anchor-0.30.1-devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH.json';
 
 import { decodeAnchorInstruction } from '../../lib/decode-anchor-instruction';
@@ -39,15 +43,7 @@ const buildInstruction = (data: Uint8Array, keys: PublicKey[]) =>
 
 const meta = {
     component: AnchorDetailsCard,
-    decorators: [
-        withMockTransactions,
-        withTokenInfoBatch,
-        Story => (
-            <SignatureContext.Provider value="">
-                <Story />
-            </SignatureContext.Provider>
-        ),
-    ],
+    decorators: [withTxInstructionSurface, withMockTransactions, withTokenInfoBatch],
     parameters: nextjsParameters,
     tags: ['autodocs', 'test'],
     // TODO(decode-instruction-with-idl): rename to a feature-scoped title once the Storybook tree migration off
@@ -62,23 +58,17 @@ const updateRewardInfosIx = buildInstruction(UPDATE_REWARD_INFOS_DISCRIMINATOR, 
 export const UpdateRewardInfos: Story = {
     args: {
         decoded: decodeAnchorInstruction(anchorProgram, updateRewardInfosIx),
-        index: 0,
-        ix: updateRewardInfosIx,
+        node: toRawInstructionNode({ index: 0, ix: updateRewardInfosIx }),
         program: anchorProgram,
-        result: { err: null },
-        signature: '',
     },
 };
 
-// Synthetic data won't match any known discriminator → AnchorInstructionBody renders the "Failed to decode" fallback.
+// Synthetic data matches no known discriminator, so the card renders the "Failed to decode" row.
 const failedToDecodeIx = buildInstruction(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]), [gen.publicKey(2)]);
 export const FailedToDecode: Story = {
     args: {
         decoded: decodeAnchorInstruction(anchorProgram, failedToDecodeIx),
-        index: 1,
-        ix: failedToDecodeIx,
+        node: toRawInstructionNode({ index: 1, ix: failedToDecodeIx }),
         program: anchorProgram,
-        result: { err: null },
-        signature: '',
     },
 };

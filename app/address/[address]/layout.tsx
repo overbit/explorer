@@ -5,9 +5,6 @@ import { AddressLookupTableAccountSection } from '@components/account/address-lo
 import { isAddressLookupTableAccount } from '@components/account/address-lookup-table/types';
 import { ConfigAccountSection } from '@components/account/ConfigAccountSection';
 import { FeatureAccountSection } from '@components/account/FeatureAccountSection';
-import { isNFTokenAccount, parseNFTokenCollectionAccount } from '@components/account/nftoken/isNFTokenAccount';
-import { NFTOKEN_ADDRESS } from '@components/account/nftoken/nftoken';
-import { NFTokenAccountSection } from '@components/account/nftoken/NFTokenAccountSection';
 import { NonceAccountSection } from '@components/account/NonceAccountSection';
 import { detectSquadsAccountType, SquadsAccountSection } from '@components/account/squads/SquadsAccountSection';
 import { SysvarAccountSection } from '@components/account/SysvarAccountSection';
@@ -20,6 +17,7 @@ import { Header } from '@components/Header';
 import { useRefreshAccount } from '@entities/account';
 // Deliberately import from `lib/program-address`, NOT from `index`, which pulls the client and pako.
 import { isPmpAccount } from '@entities/pmp-account/lib/program-address';
+import { NFTOKEN_ADDRESS } from '@explorer/decoder-nftoken/program-ids';
 import {
     ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL,
     BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL,
@@ -30,6 +28,7 @@ import {
     SYSVAR_PROGRAM_LABEL,
     VOTE_PROGRAM_LABEL,
 } from '@explorer/parsers';
+import { isNftokenCollection, NftokenAccountSection } from '@features/nftoken';
 import { SecurityNotification } from '@features/security-txt';
 import { StakeAccountSection } from '@features/stake';
 import { VoteAccountSection } from '@features/vote';
@@ -43,7 +42,7 @@ import {
     useFetchAccountInfo,
 } from '@providers/accounts';
 import FLAGGED_ACCOUNTS_WARNING from '@providers/accounts/flagged-accounts';
-import { CacheEntry, FetchStatus } from '@providers/cache';
+import { CacheEntry, FetchStatus, isFetchingWithoutData } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
 import { SOLANA_ATTESTATION_SERVICE_PROGRAM_ADDRESS as SAS_PROGRAM_ID } from '@solana/attestation';
 import { Address } from '@solana/kit';
@@ -73,13 +72,13 @@ import {
 import { useCompressedNft } from '@/app/providers/compressed-nft';
 import { useSquadsMultisigLookup } from '@/app/providers/squadsMultisig';
 import { type NavigationTab, NavigationTabLink, NavigationTabs } from '@/app/shared/ui/navigation-tabs';
-import { PageContainer } from '@/app/shared/ui/page-container/PageContainer';
-import { StickyHeader } from '@/app/shared/ui/sticky-header/StickyHeader';
+import { PageLayout, PageSections } from '@/app/shared/ui/page-layout';
 import { isAttestationAccount } from '@/app/utils/attestation-service';
 import { decodeManifestAccount, isManifestProgramId } from '@/app/utils/manifest';
 import {
     fetchFullTokenInfo,
     FullTokenInfo,
+    FullTokenInfoSwrKey,
     getFullTokenInfoSwrKey,
     isRedactedTokenAddress,
 } from '@/app/utils/token-info';
@@ -95,19 +94,13 @@ const TABS_LOOKUP: Record<string, AddressTab[]> = {
         { path: 'verified-build', title: 'Verified Build' },
     ],
     'spl-account-compression': [{ path: 'concurrent-merkle-tree', title: 'Concurrent Merkle Tree' }],
-    'spl-token-2022:mint': [
-        { path: 'transfers', title: 'Transfers' },
-        { path: 'instructions', title: 'Instructions' },
-    ],
+    'spl-token-2022:mint': [{ path: 'transfers', title: 'Transfers' }],
     'spl-token-2022:mint:metaplexNFT': [
         { path: 'metadata', title: 'Metadata' },
         { path: 'attributes', title: 'Attributes' },
         { path: 'files', title: 'Files' },
     ],
-    'spl-token:mint': [
-        { path: 'transfers', title: 'Transfers' },
-        { path: 'instructions', title: 'Instructions' },
-    ],
+    'spl-token:mint': [{ path: 'transfers', title: 'Transfers' }],
     'spl-token:mint:metaplexNFT': [
         { path: 'metadata', title: 'Metadata' },
         { path: 'attributes', title: 'Attributes' },
@@ -135,7 +128,6 @@ export type AddressTabPath =
     | 'stake-history'
     | 'blockhashes'
     | 'transfers'
-    | 'instructions'
     | 'rewards'
     | 'metadata'
     | 'attributes'
@@ -161,14 +153,6 @@ type AddressParams = { address: string };
 type Props = PropsWithChildren<{ params: Promise<AddressParams> }>;
 type InnerProps = PropsWithChildren<{ params: AddressParams }>;
 
-// Single source of truth for the page's centered content-column width — every section on the address
-// page aligns to this, so the max-width lives in one place rather than being copy-pasted per section.
-const CONTENT_WIDTH = 'mx-auto w-full max-w-5xl';
-
-function ContentWidth({ children }: { children: React.ReactNode }) {
-    return <div className={CONTENT_WIDTH}>{children}</div>;
-}
-
 function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     const fetchAccount = useFetchAccountInfo();
     const { status, cluster, url, genesisHash } = useCluster();
@@ -182,18 +166,23 @@ function AddressLayoutInner({ children, params: { address } }: InnerProps) {
         /* empty */
     }
 
-    const infoStatus = info?.status;
     const infoParsed = info?.data?.data.parsed;
 
-    const shouldFetchTokenInfo =
-        infoStatus === FetchStatus.Fetched && infoParsed && isTokenProgramData(infoParsed) && pubkey;
-    const { data: fullTokenInfo, isLoading: isFullTokenInfoLoading } = useSWRImmutable(
+    const shouldFetchTokenInfo = infoParsed && isTokenProgramData(infoParsed) && pubkey;
+    const {
+        data: fullTokenInfo,
+        error: fullTokenInfoError,
+        isLoading: isFullTokenInfoLoading,
+    } = useSWRImmutable(
         shouldFetchTokenInfo ? getFullTokenInfoSwrKey(address, cluster, url, genesisHash) : null,
-        fetchFullTokenInfo,
+        fetchFullTokenInfoOrNull,
+        // The token-info request logs each failure, so a refresh or a remount retries it instead of SWR.
+        { shouldRetryOnError: false },
     );
+    const tokenInfo = fullTokenInfo ?? undefined;
 
-    const isAccountLoading = !info || info.status === FetchStatus.Fetching;
-    const isTokenInfoLoading = isAccountLoading || isFullTokenInfoLoading;
+    const isAccountLoading = !info || isFetchingWithoutData(info);
+    const isTokenInfoLoading = isAccountLoading || (isFullTokenInfoLoading && fullTokenInfoError === undefined);
 
     // Fetch account on load. `info` is in the deps so the fetch re-arms if the cache entry is
     // cleared from under us (e.g. a dev-mode segment remount wiping provider state mid-fetch).
@@ -204,32 +193,33 @@ function AddressLayoutInner({ children, params: { address } }: InnerProps) {
     }, [address, status, info]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return (
-        <PageContainer variant="pulled-up" className="pt-3 lg:pt-5">
-            <ContentWidth>
-                <Header
-                    address={address}
-                    account={info?.data}
-                    tokenInfo={fullTokenInfo}
-                    isTokenInfoLoading={isTokenInfoLoading}
-                />
-            </ContentWidth>
+        <PageLayout>
+            <Header
+                address={address}
+                account={info?.data}
+                tokenInfo={tokenInfo}
+                isTokenInfoLoading={isTokenInfoLoading}
+            />
             {!pubkey ? (
-                <ContentWidth>
-                    <ErrorCard text={`Address "${address}" is not valid`} />
-                </ContentWidth>
+                <ErrorCard text={`Address "${address}" is not valid`} />
             ) : (
                 <DetailsSections
                     info={info}
                     pubkey={pubkey}
-                    tokenInfo={fullTokenInfo}
+                    tokenInfo={tokenInfo}
                     isTokenInfoLoading={isTokenInfoLoading}
                     notification={<SecurityNotification parsedData={infoParsed} address={address} />}
                 >
                     {children}
                 </DetailsSections>
             )}
-        </PageContainer>
+        </PageLayout>
     );
+}
+
+// SWR sets `isLoading` while a request runs and `data` is `undefined`, so a missing token info caches `null` instead.
+async function fetchFullTokenInfoOrNull(key: FullTokenInfoSwrKey) {
+    return (await fetchFullTokenInfo(key)) ?? null;
 }
 
 export default function AddressLayout(props: Props) {
@@ -262,7 +252,7 @@ function DetailsSections({
     const refreshAccount = useRefreshAccount();
     const address = pubkey.toBase58();
 
-    if (!info || info.status === FetchStatus.Fetching || isTokenInfoLoading) {
+    if (!info || isTokenInfoLoading) {
         return <LoadingCard />;
     } else if (info.status === FetchStatus.FetchFailed || info.data?.lamports === undefined) {
         return <ErrorCard retry={() => refreshAccount(pubkey, 'parsed')} text="Fetch Failed" />;
@@ -294,16 +284,14 @@ function DetailsSections({
     );
 
     return (
-        <>
+        <PageSections>
             {FLAGGED_ACCOUNTS_WARNING[address] ?? null}
-            <ContentWidth>
-                <InfoSection account={account} tokenInfo={tokenInfo} />
-            </ContentWidth>
-            <ContentWidth>{notification}</ContentWidth>
+            <InfoSection account={account} tokenInfo={tokenInfo} />
+            {notification}
             <MoreSection baseUrl={`/address/${address}`} tabs={navigationTabs} asyncChildren={asyncTabChildren}>
                 {children}
             </MoreSection>
-        </>
+        </PageSections>
     );
 }
 
@@ -342,7 +330,7 @@ function InfoSection({ account, tokenInfo }: { account: Account; tokenInfo?: Ful
             />
         );
     } else if (account.owner.toBase58() === NFTOKEN_ADDRESS) {
-        return <NFTokenAccountSection account={account} />;
+        return <NftokenAccountSection account={account} />;
     } else if (parsedData && isTokenProgramData(parsedData)) {
         return <TokenAccountSection account={account} tokenAccount={parsedData.parsed} tokenInfo={tokenInfo} />;
     } else if (isParsedAccountProgram(parsedData, NONCE_PROGRAM_LABEL)) {
@@ -408,16 +396,10 @@ function MoreSection({
 
     return (
         <>
-            <StickyHeader className={CONTENT_WIDTH}>
-                <PageContainer>
-                    <ContentWidth>
-                        <NavigationTabs buildHref={buildHref} tabs={tabs}>
-                            {asyncChildren}
-                        </NavigationTabs>
-                    </ContentWidth>
-                </PageContainer>
-            </StickyHeader>
-            <ContentWidth>{children}</ContentWidth>
+            <NavigationTabs buildHref={buildHref} sticky tabs={tabs}>
+                {asyncChildren}
+            </NavigationTabs>
+            {children}
         </>
     );
 }
@@ -467,12 +449,9 @@ function getNavigationTabs(pubkey: PublicKey, account: Account): AddressTab[] {
         tabs.push({ path: 'metadata', title: 'Metadata' });
     }
 
-    const isNFToken = account && isNFTokenAccount(account);
-    if (isNFToken) {
-        const collection = parseNFTokenCollectionAccount(account);
-        if (collection) {
-            tabs.push({ path: 'nftoken-collection-nfts', title: 'NFTs' });
-        }
+    const isNFToken = account.owner.toBase58() === NFTOKEN_ADDRESS;
+    if (isNftokenCollection(account)) {
+        tabs.push({ path: 'nftoken-collection-nfts', title: 'NFTs' });
     }
 
     if (

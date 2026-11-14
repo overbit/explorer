@@ -4,7 +4,6 @@ import { SWRConfig } from 'swr';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@solana/kit', () => ({ createSolanaRpc: vi.fn() }));
-vi.mock('@/app/shared/lib/logger', () => ({ Logger: { error: vi.fn() } }));
 
 import { createSolanaRpc } from '@solana/kit';
 
@@ -60,9 +59,6 @@ const connectableText = () => screen.getByTestId('connectable').textContent;
 
 beforeEach(() => {
     vi.clearAllMocks();
-    localStorage.clear();
-    // Approvals live in sessionStorage, so one test's approved origin would otherwise carry into the next.
-    sessionStorage.clear();
 });
 
 // Three consumers now gate their requests on this one context field, and its type is optional, so

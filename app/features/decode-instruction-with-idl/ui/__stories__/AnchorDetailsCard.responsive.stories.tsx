@@ -1,12 +1,16 @@
 import { gen } from '@__fixtures__/gen';
 import { AnchorProvider, Idl, Program } from '@coral-xyz/anchor';
+import { toRawInstructionNode } from '@entities/instruction-card';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { nextjsParameters, withMockTransactions, withTokenInfoBatch } from '@storybook-config/decorators';
+import {
+    nextjsParameters,
+    withMockTransactions,
+    withTokenInfoBatch,
+    withTxInstructionSurface,
+} from '@storybook-config/decorators';
 import { INITIAL_VIEWPORTS, withViewportFromGlobal } from '@storybook-config/responsive-decorators';
 import type { Meta, StoryObj } from '@storybook-config/types';
-import React from 'react';
 
-import { SignatureContext } from '@/app/components/instruction/SignatureContext';
 import anchor030Devi from '@/app/entities/idl/mocks/anchor/anchor-0.30.1-devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH.json';
 
 import { decodeAnchorInstruction } from '../../lib/decode-anchor-instruction';
@@ -34,16 +38,7 @@ const ix = new TransactionInstruction({
 // Known: switching between Mobile/Tablet variants has a brief lag from viewport addon iframe resize + remount.
 const meta = {
     component: AnchorDetailsCard,
-    decorators: [
-        withMockTransactions,
-        withTokenInfoBatch,
-        Story => (
-            <SignatureContext.Provider value="">
-                <Story />
-            </SignatureContext.Provider>
-        ),
-        withViewportFromGlobal,
-    ],
+    decorators: [withTxInstructionSurface, withMockTransactions, withTokenInfoBatch, withViewportFromGlobal],
     parameters: {
         ...nextjsParameters,
         viewport: { options: INITIAL_VIEWPORTS },
@@ -59,11 +54,8 @@ type Story = StoryObj<typeof meta>;
 
 const args = {
     decoded: decodeAnchorInstruction(anchorProgram, ix),
-    index: 0,
-    ix,
+    node: toRawInstructionNode({ index: 0, ix }),
     program: anchorProgram,
-    result: { err: null },
-    signature: '',
 };
 
 export const Mobile: Story = {

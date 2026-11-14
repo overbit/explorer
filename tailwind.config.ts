@@ -132,6 +132,7 @@ const config: Config = {
                     600: '#404040',
                     700: '#262626',
                     800: '#171717',
+                    850: '#121212', // branded midpoint for upstream navbar
                     900: '#0a0a0a',
                     950: '#000000',
                 },
@@ -146,6 +147,7 @@ const config: Config = {
                     600: '#404040',
                     700: '#262626',
                     800: '#1a1a1a',
+                    850: '#141414',
                     900: '#0a0a0a',
                     950: '#000000',
                 },
@@ -243,7 +245,8 @@ const config: Config = {
             'max-sm': { max: getScreenDim('sm', 0) },
             'max-md': { max: getScreenDim('md', 0) },
             xxs: getScreenDim('xxs'),
-            xs: getScreenDim('xs'),
+            // Align upstream navbar breakpoint handling at 375px.
+            xs: getScreenDim('xs', 0),
             sm: getScreenDim('sm'),
             md: getScreenDim('md'),
             lg: getScreenDim('lg'),

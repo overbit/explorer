@@ -1,20 +1,26 @@
 import { Idl as AnchorIdl } from '@coral-xyz/anchor';
 
-import { extractProgramAddressFromIdlData } from '../../lib/utils';
+import { getIdlDeclaredAddress } from '../../lib/utils';
 import anchor029Devi from '../../mocks/anchor/anchor-0.29.0-devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH.json';
 import anchor030devi from '../../mocks/anchor/anchor-0.30.1-devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH.json';
 import anchorLegacy094ShankWave from '../../mocks/anchor/anchor-legacy-0.9.4-shank-waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF.json';
 import anchor029 from '../../mocks/anchor/reference-0.29.json';
 import anchor030 from '../../mocks/anchor/reference-0.30.json';
+import { formatReferenceSerdeIdl } from '../formatters/format-reference-serde-idl';
 import { formatSerdeIdl } from '../formatters/format-serde-idl';
 
-describe('Implementation for `formatSerdeIdl`', () => {
+const DEVI_ADDRESS = 'devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH';
+
+describe.each([
+    ['formatSerdeIdl', formatSerdeIdl],
+    ['formatReferenceSerdeIdl', formatReferenceSerdeIdl],
+])('Implementation for `%s`', (_name, formatIdl) => {
     it('should work for devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH program', async () => {
         let idl: AnchorIdl;
-        const address = extractProgramAddressFromIdlData(anchor029Devi);
+        const address = DEVI_ADDRESS;
         expect('0.1.0').toBe(anchor029Devi.version);
         expect(() => {
-            idl = formatSerdeIdl(anchor029Devi, address);
+            idl = formatIdl(anchor029Devi, address);
 
             expect(idl?.metadata).toStrictEqual({ name: 'amm_v3', version: '0.1.0' });
             expect(idl?.address).toBe(address);
@@ -23,10 +29,10 @@ describe('Implementation for `formatSerdeIdl`', () => {
 
     it('should work for devi51mZmdwUJGU9hjN27vEz64Gps7uUefqxg27EAtH program', async () => {
         let idl: AnchorIdl;
-        const address = extractProgramAddressFromIdlData(anchor030devi);
+        const address = DEVI_ADDRESS;
         expect('0.1.0').toBe(anchor030devi.metadata.version);
         expect(() => {
-            idl = formatSerdeIdl(anchor030devi, address);
+            idl = formatIdl(anchor030devi, address);
 
             expect(idl?.metadata).toStrictEqual({
                 name: 'amm_v3',
@@ -42,10 +48,10 @@ describe('Implementation for `formatSerdeIdl`', () => {
     // https://www.diffchecker.com/JqI33i4w/
     it('should work for 0.29 reference program', async () => {
         let idl: AnchorIdl;
-        const address = extractProgramAddressFromIdlData(anchor029, new Array(31).fill('1').concat(['2']).join(''));
+        const address = declaredAddressOr(anchor029, new Array(31).fill('1').concat(['2']).join(''));
         expect('0.1.0').toBe(anchor029.version);
         expect(() => {
-            idl = formatSerdeIdl(anchor029, address);
+            idl = formatIdl(anchor029, address);
 
             expect(idl?.metadata).toStrictEqual({
                 name: 'idl',
@@ -69,10 +75,10 @@ describe('Implementation for `formatSerdeIdl`', () => {
      */
     it('should fail for 0.30 reference program', async () => {
         let idl: AnchorIdl;
-        const address = extractProgramAddressFromIdlData(anchor030, new Array(31).fill('1').concat(['3']).join(''));
+        const address = declaredAddressOr(anchor030, new Array(31).fill('1').concat(['3']).join(''));
         expect('0.1.0').toBe(anchor030.metadata.version);
         expect(() => {
-            idl = formatSerdeIdl(anchor030, address);
+            idl = formatIdl(anchor030, address);
             expect(idl?.metadata).toStrictEqual({
                 description: 'Created with Anchor',
                 name: 'idl',
@@ -81,13 +87,12 @@ describe('Implementation for `formatSerdeIdl`', () => {
             expect(idl?.address).toBe(address);
         }).toThrowError(new TypeError("Cannot read properties of undefined (reading 'kind')"));
     });
+});
 
-    it('should work for 0.9.4 waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF program as it contains unsuported types', async () => {
+describe('0.9.4 waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF program', () => {
+    it('should work for `formatSerdeIdl`', async () => {
         let idl: AnchorIdl;
-        const address = extractProgramAddressFromIdlData(
-            anchorLegacy094ShankWave,
-            'waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF',
-        );
+        const address = declaredAddressOr(anchorLegacy094ShankWave, 'waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF');
         expect('0.9.4').toBe(anchorLegacy094ShankWave.version);
         expect(() => {
             idl = formatSerdeIdl(anchorLegacy094ShankWave, address);
@@ -102,6 +107,13 @@ describe('Implementation for `formatSerdeIdl`', () => {
             );
         }).not.toThrowError();
     });
+
+    it('should fail for `formatReferenceSerdeIdl` as it contains unsuported types', async () => {
+        const address = declaredAddressOr(anchorLegacy094ShankWave, 'waveQX2yP3H1pVU8djGvEHmYg8uamQ84AuyGtpsrXTF');
+        expect(() => formatReferenceSerdeIdl(anchorLegacy094ShankWave, address)).toThrowError(
+            new Error('Unsupported type: {"tuple":["u64","u64"]}'),
+        );
+    });
 });
 
 type IdlStructs = Pick<AnchorIdl, 'accounts' | 'constants' | 'errors' | 'events' | 'instructions' | 'types'>;
@@ -115,4 +127,9 @@ function getFieldLengths(keys: Array<keyof IdlStructs>, idl?: IdlStructs) {
         }
         return acc;
     }, [] as number[]);
+}
+
+function declaredAddressOr(idl: unknown, fallback: string): string {
+    const declared = getIdlDeclaredAddress(idl);
+    return declared.kind === 'address' ? declared.address : fallback;
 }

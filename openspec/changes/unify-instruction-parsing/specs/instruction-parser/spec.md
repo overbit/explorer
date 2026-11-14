@@ -11,7 +11,8 @@ flowchart TD
     A[Inspector<br/>TransactionInstruction] --> B[dispatcher.fromTransactionInstruction]
     C[TX page input<br/>ParsedInstruction or PartiallyDecodedInstruction] --> Q{has a 'parsed' field?}
     Q -- ParsedInstruction --> D[dispatcher.fromParsedInstruction]
-    Q -- PartiallyDecodedInstruction --> K[predicate-based card routing<br/>dispatcher bypassed]
+    Q -- PartiallyDecodedInstruction --> T[TransactionInstruction<br/>built with the instruction nodes]
+    T --> B
 
     B --> E[slice.fromTransaction]
     D --> F[slice.fromParsed]
@@ -22,13 +23,13 @@ flowchart TD
     G --> H[[toParsedInstruction<br/>transitional wrap]]
     H --> I[ParsedInstruction]
 
-    B -. no slice .-> U[/undefined → UnknownDetailsCard/]
+    B -. no slice .-> U[/undefined → IDL card or UnknownDetailsCard/]
     B -. slice, bad discriminator .-> N[/UnparsedInstruction → program-aware fallback/]
     D -. no slice / fromParsed undefined .-> R[/input passed through unchanged/]
-    K -. MPL, Lighthouse, Stake, … .-> KK[card self-parses from raw bytes<br/>e.g. parseMetaplexTokenMetadataInstruction]
-    K -. no predicate matches .-> U
+    A -. PMP, Stake .-> KK[card self-parses from raw bytes]
+    T -. PMP, Stake .-> KK
 
-    I --> J[&lt;DetailsCard ix=… /&gt;]
+    I --> J[&lt;DetailsCard node=… /&gt;]
     R --> J
     KK --> J
 ```
@@ -41,10 +42,10 @@ The tx page's input is the union `ParsedInstruction | PartiallyDecodedInstructio
 
 The `Inspector` node in the diagram is the convergence point for **both** of the inspector's entry modes: loading a transaction by signature (`/tx/[signature]/inspect`) and decoding a wire-format `VersionedMessage` (`/tx/inspector?message=…`). Both deserialise/decompile down to the same `TransactionInstruction`s before reaching `dispatcher.fromTransactionInstruction`, so the parsing pipeline is identical regardless of how the inspector was fed — adding or changing an inspector entry mode does not touch any slice.
 
-The discriminant is the presence of a `parsed` field, and the tx page branches on it **before** the dispatcher (`'parsed' in ix ? dispatcher.fromParsedInstruction(ix) : undefined`):
+The discriminant is the presence of a `parsed` field, and the instruction router branches on it **before** the dispatcher (`'parsed' in node.ix ? dispatcher.fromParsedInstruction(node.ix) : dispatcher.fromTransactionInstruction(node.ix)`):
 
 - A **`ParsedInstruction`** goes through `dispatcher.fromParsedInstruction`, which either normalises it via a slice's `fromParsed` or passes it through unchanged.
-- A **`PartiallyDecodedInstruction`** never enters the dispatcher. It falls through to the tx page's existing predicate chain (`isLighthouseInstruction`, the MPL `programId` check, Anchor/IDL, … else `UnknownDetailsCard`), and the matched card decodes it from raw bytes via the **byte path** (e.g. MPL's card calls `parseMetaplexTokenMetadataInstruction(toKitInstruction(ix))`).
+- A **`PartiallyDecodedInstruction`** never enters `dispatcher.fromParsedInstruction`. The tx page converts it to a `TransactionInstruction` when it builds the instruction nodes, so the router decodes it from raw bytes via the **byte path**, `dispatcher.fromTransactionInstruction`, the same call the inspector makes.
 
 So `fromParsedInstruction` is typed `(ix: ParsedInstruction)` and only ever receives a `ParsedInstruction`; it MUST NOT be called with a `PartiallyDecodedInstruction`. Programs that surface as `PartiallyDecodedInstruction` are reached only through `fromTransaction`, never by a slice reaching into a half-parsed RPC shape.
 
@@ -93,7 +94,7 @@ The entity at `app/entities/instruction-parser/` SHALL expose a factory `createI
 
 - **WHEN** `fromTransactionInstruction(ix)` is called for a program with no registered parser
 - **THEN** the dispatcher MUST return `undefined`
-- **AND** callers MUST treat that as "render `UnknownDetailsCard`"
+- **AND** callers MUST render the PMP card or the raw stake card when one of them takes the instruction, else the IDL card when an IDL decodes the instruction, and `UnknownDetailsCard` otherwise
 
 #### Scenario: Parser exists, discriminator unknown
 
@@ -195,7 +196,7 @@ Routing is keyed on `programId` (base58), which MUST be the canonical on-chain p
 
 ### Requirement: Cards consume pre-parsed slice output
 
-A `*DetailsCard` whose program has a registered slice parser MUST consume the dispatcher's already-parsed output rather than re-parsing the raw instruction. `MetaplexTokenMetadataDetailsCard` MUST accept an optional `parsedIx` prop; when provided with a non-empty `parsed.type`, the card MUST reuse it and skip its internal parse.
+A `*DetailsCard` whose program has a registered slice parser MUST consume the dispatcher's already-parsed output rather than re-parsing the raw instruction. `MetaplexTokenMetadataDetailsCard` MUST take the `{ type, info }` payload of the dispatcher's `DispatchResult` as `parsed` on both surfaces, or `undefined` when the slice cannot decode the instruction, and MUST NOT parse the instruction data itself.
 
 Cards whose program has **no** registered slice (the majority today — Stake, Vote, ALT, Memo, Lighthouse, SAS, Anchor/IDL, …) are unaffected by this change: `fromParsedInstruction` passes their input through unchanged and they continue to render exactly as before. This requirement governs only the cards whose program *does* have a slice; it does not require every card to gain a slice.
 
@@ -203,15 +204,10 @@ Cards whose program has **no** registered slice (the majority today — Stake, V
 
 - **WHEN** the dispatcher processes an instruction for a program with no registered slice
 - **THEN** `fromParsedInstruction` MUST return the input unchanged and the existing `*DetailsCard` MUST render from it as it did before this change
-- **AND** no new slice or `parsedIx` prop is required for that card
+- **AND** no new slice or `DispatchResult` prop is required for that card
 
-#### Scenario: Inspector renders MPL without double-parse
+#### Scenario: Both surfaces pass the dispatcher result to the MPL card
 
-- **WHEN** the inspector routes an MPL instruction to the card with `parsedIx` set
-- **THEN** the card MUST reuse `parsedIx.parsed.{type, info}`
-- **AND** the card MUST NOT call `parseMetaplexTokenMetadataInstruction` again in the same render
-
-#### Scenario: Tx-page predicate path self-parses
-
-- **WHEN** the tx-page predicate branch routes a `PartiallyDecodedInstruction` to the MPL card without `parsedIx`
-- **THEN** the card MUST parse internally via `parseMetaplexTokenMetadataInstruction(toKitInstruction(ix))`
+- **WHEN** the tx page or the inspector routes an MPL instruction to `MetaplexTokenMetadataDetailsCard`
+- **THEN** the router MUST pass the payload of the `dispatcher.fromTransactionInstruction` result as `parsed`
+- **AND** the card MUST NOT call `parseMetaplexTokenMetadataInstruction`

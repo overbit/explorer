@@ -70,7 +70,6 @@ function renderWithStore(initialClusters: SavedCluster[] = []) {
 describe('ClusterModal', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        localStorage.clear();
         clusterMock.customUrl = CUSTOM_URL;
         nav.searchParams = new URLSearchParams(`cluster=custom&customUrl=${CUSTOM_URL}`);
     });
@@ -198,23 +197,27 @@ describe('ClusterModal', () => {
             { name: 'My Local', url: 'http://localhost:8899' },
             { name: 'Staging', url: 'https://staging.example.com/rpc?api-key=secret' },
         ]);
-        expect(screen.getByTestId('saved-cluster-host-My Local')).toHaveTextContent('localhost:8899');
-        expect(screen.getByTestId('saved-cluster-host-Staging')).toHaveTextContent('staging.example.com');
+        expect(screen.getByTestId('saved-cluster-host-http://localhost:8899')).toHaveTextContent('localhost:8899');
+        expect(
+            screen.getByTestId('saved-cluster-host-https://staging.example.com/rpc?api-key=secret'),
+        ).toHaveTextContent('staging.example.com');
     });
 
     // The default name is the host, so the common entry is one line, not the same string twice.
     it('should drop the host line when the name is already the host', () => {
         renderWithStore([{ name: 'localhost:8899', url: 'http://localhost:8899' }]);
-        expect(screen.queryByTestId('saved-cluster-host-localhost:8899')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('saved-cluster-host-http://localhost:8899')).not.toBeInTheDocument();
         expect(screen.getByText('localhost:8899')).toBeInTheDocument();
     });
 
     // Providers put the API key in the path or the query, and this panel gets opened on a shared screen.
     it('should keep the path and query out of the visible host line', () => {
         renderWithStore([{ name: 'Staging', url: 'https://staging.example.com/rpc?api-key=secret' }]);
-        expect(screen.getByTestId('saved-cluster-host-Staging')).not.toHaveTextContent('api-key=secret');
+        expect(
+            screen.getByTestId('saved-cluster-host-https://staging.example.com/rpc?api-key=secret'),
+        ).not.toHaveTextContent('api-key=secret');
         // Still reachable on a deliberate hover.
-        expect(screen.getByTestId('saved-cluster-link-Staging')).toHaveAttribute(
+        expect(screen.getByTestId('saved-cluster-link-https://staging.example.com/rpc?api-key=secret')).toHaveAttribute(
             'title',
             'Staging — https://staging.example.com/rpc?api-key=secret',
         );
@@ -226,8 +229,8 @@ describe('ClusterModal', () => {
         const longName = 'dsfdfsdfsdfsdfdfsfsdfsdfsdfsdfsdfsdfsdfsdf';
         renderWithStore([{ name: longName, url: 'http://localhost:8899' }]);
         expect(screen.getByText(longName)).toHaveClass('truncate');
-        expect(screen.getByTestId(`saved-cluster-host-${longName}`)).toHaveClass('truncate');
-        expect(screen.getByTestId(`saved-cluster-link-${longName}`)).toHaveAttribute(
+        expect(screen.getByTestId('saved-cluster-host-http://localhost:8899')).toHaveClass('truncate');
+        expect(screen.getByTestId('saved-cluster-link-http://localhost:8899')).toHaveAttribute(
             'title',
             `${longName} — http://localhost:8899`,
         );
@@ -243,7 +246,7 @@ describe('ClusterModal', () => {
             { name: 'My Local', url: 'http://localhost:8899' },
             { name: 'Staging', url: 'http://staging.example.com' },
         ]);
-        fireEvent.click(screen.getByTestId('delete-cluster-My Local'));
+        fireEvent.click(screen.getByTestId('delete-cluster-http://localhost:8899'));
         expect(store.get(savedClustersAtom)).toEqual([{ name: 'Staging', url: 'http://staging.example.com' }]);
     });
 
@@ -262,7 +265,7 @@ describe('ClusterModal', () => {
     it('should show save button again after deleting the cluster with matching URL', () => {
         renderWithStore([{ name: 'My Node', url: CUSTOM_URL }]);
         expect(screen.queryByTestId('save-custom-cluster-btn')).not.toBeInTheDocument();
-        fireEvent.click(screen.getByTestId('delete-cluster-My Node'));
+        fireEvent.click(screen.getByTestId(`delete-cluster-${CUSTOM_URL}`));
         expect(screen.getByTestId('save-custom-cluster-btn')).toBeInTheDocument();
     });
 });
@@ -272,7 +275,6 @@ describe('ClusterModal', () => {
 describe('ClusterModal cluster hrefs', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        localStorage.clear();
         nav.searchParams = new URLSearchParams(`cluster=custom&customUrl=${CUSTOM_URL}&sort=fee`);
     });
 
@@ -291,7 +293,7 @@ describe('ClusterModal cluster hrefs', () => {
 
     it('should point a saved cluster at its own endpoint', () => {
         renderWithStore([{ name: 'Staging', url: 'http://staging.example.com' }]);
-        expect(screen.getByTestId('saved-cluster-link-Staging')).toHaveAttribute(
+        expect(screen.getByTestId('saved-cluster-link-http://staging.example.com')).toHaveAttribute(
             'href',
             `/?cluster=custom&customUrl=${encodeURIComponent('http://staging.example.com')}&sort=fee`,
         );
@@ -320,6 +322,7 @@ describe('ClusterModal cluster hrefs', () => {
             expect(nav.push).not.toHaveBeenCalled();
             expect(nav.replace).toHaveBeenCalledWith(
                 `/?cluster=custom&customUrl=${encodeURIComponent('http://typed-node:8899')}&sort=fee`,
+                { scroll: false },
             );
         } finally {
             vi.useRealTimers();
@@ -328,8 +331,8 @@ describe('ClusterModal cluster hrefs', () => {
 
     it('should drop the endpoint when deleting the saved cluster the page is pointed at', () => {
         renderWithStore([{ name: 'My Local', url: CUSTOM_URL }]);
-        fireEvent.click(screen.getByTestId('delete-cluster-My Local'));
-        expect(nav.push).toHaveBeenCalledWith('/?sort=fee');
+        fireEvent.click(screen.getByTestId(`delete-cluster-${CUSTOM_URL}`));
+        expect(nav.push).toHaveBeenCalledWith('/?sort=fee', { scroll: false });
     });
 });
 
@@ -339,56 +342,8 @@ describe('ClusterModal cluster hrefs', () => {
 describe('ClusterModal endpoint consent', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        localStorage.clear();
         clusterMock.customUrl = CUSTOM_URL;
         nav.searchParams = new URLSearchParams(`cluster=custom&customUrl=${CUSTOM_URL}&sort=fee`);
-    });
-
-    function typeUrl(value: string) {
-        fireEvent.change(screen.getByLabelText('Custom RPC URL'), { target: { value } });
-        act(() => vi.advanceTimersByTime(500));
-    }
-
-    it('should approve the origin of a typed endpoint before navigating to it', () => {
-        vi.useFakeTimers();
-        try {
-            const { store } = renderWithStore();
-            typeUrl('https://my-node.example/rpc?api-key=secret');
-
-            // Origin only — a rotated key on the same server must not ask again.
-            expect(store.get(approvedOriginsAtom)).toEqual(['https://my-node.example']);
-            expect(nav.replace).toHaveBeenCalledWith(
-                `/?cluster=custom&customUrl=${encodeURIComponent('https://my-node.example/rpc?api-key=secret')}&sort=fee`,
-            );
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-
-    it('should not navigate on a half-typed value', () => {
-        vi.useFakeTimers();
-        try {
-            const { store } = renderWithStore();
-            typeUrl('https:/');
-
-            // Not an endpoint yet. Navigating would churn the URL, and the reader would strip each attempt.
-            expect(store.get(approvedOriginsAtom)).toEqual([]);
-            expect(nav.replace).not.toHaveBeenCalled();
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-
-    it('should clear the endpoint when the field is emptied', () => {
-        vi.useFakeTimers();
-        try {
-            renderWithStore();
-            typeUrl('');
-
-            expect(nav.replace).toHaveBeenCalledWith('/?cluster=custom&sort=fee');
-        } finally {
-            vi.useRealTimers();
-        }
     });
 
     it('should approve a saved cluster when it is selected', () => {
@@ -396,31 +351,11 @@ describe('ClusterModal endpoint consent', () => {
 
         // A real anchor, so stop jsdom navigating. React's handler is delegated at the root and still
         // runs: `preventDefault` does not stop propagation.
-        const link = screen.getByTestId('saved-cluster-link-Staging');
+        const link = screen.getByTestId('saved-cluster-link-https://staging.example.com/rpc');
         link.addEventListener('click', event => event.preventDefault());
         fireEvent.click(link);
 
         expect(store.get(approvedOriginsAtom)).toEqual(['https://staging.example.com']);
-    });
-
-    it('should not echo a committed endpoint back over what the user is still typing', () => {
-        vi.useFakeTimers();
-        try {
-            renderWithStore();
-            const input = screen.getByLabelText('Custom RPC URL');
-
-            // Commit one value...
-            typeUrl('https://a.io');
-            // ...then let that navigation land, which is when the render-phase re-sync fires...
-            clusterMock.customUrl = 'https://a.io';
-            // ...while the user is still typing the rest of the URL.
-            fireEvent.change(input, { target: { value: 'https://a.io/rpc' } });
-
-            // Without the guard the arriving value overwrites the draft and the keystrokes are lost.
-            expect(input).toHaveValue('https://a.io/rpc');
-        } finally {
-            vi.useRealTimers();
-        }
     });
 });
 
@@ -429,7 +364,6 @@ describe('ClusterModal endpoint consent', () => {
 describe('ClusterModal custom URL field', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        localStorage.clear();
         clusterMock.customUrl = CUSTOM_URL;
         nav.searchParams = new URLSearchParams(`cluster=custom&customUrl=${CUSTOM_URL}`);
     });

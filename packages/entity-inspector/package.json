@@ -27,6 +27,11 @@
             "types": "./dist/verification/index.d.ts",
             "import": "./dist/verification/index.js",
             "default": "./dist/verification/index.js"
+        },
+        "./constants": {
+            "types": "./dist/shared/constants.d.ts",
+            "import": "./dist/shared/constants.js",
+            "default": "./dist/shared/constants.js"
         }
     },
     "scripts": {
@@ -50,7 +55,7 @@
         "@explorer/idl-decode": "workspace:*",
         "@explorer/parsers": "workspace:*",
         "@explorer/utils": "workspace:*",
-        "@modelcontextprotocol/sdk": "1.27.1",
+        "@modelcontextprotocol/sdk": "1.32.0",
         "@noble/hashes": "1.5.0",
         "@solana-program/address-lookup-table": "0.14.1",
         "@solana-program/loader-v3": "0.6.0",
@@ -60,9 +65,10 @@
         "@solana-program/token-2022": "0.16.0",
         "@solana/attestation": "2.1.0",
         "@solana/kit": "8.3.0",
-        "zod": "4.3.6"
+        "zod": "4.6.6"
     },
     "devDependencies": {
+        "@sentry/core": "10.75.2",
         "@vitest/coverage-v8": "catalog:vitest",
         "agadoo": "^3.0.0",
         "oxfmt": "catalog:oxc",

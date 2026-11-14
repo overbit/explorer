@@ -19,7 +19,7 @@ import {
     USER_AGENT,
 } from '@/app/api/metadata/proxy';
 import { chunk } from '@/app/shared/lib/array';
-import { IPFS_PROTOCOL, resolveIpfsUri } from '@/app/shared/lib/ipfs';
+import { resolveIpfsUri } from '@/app/shared/lib/ipfs';
 import { parseUrl } from '@/app/shared/lib/url';
 
 import type { TokenInfo } from '../lib/types';
@@ -115,12 +115,14 @@ async function fetchDecimals(
  * unlisted mint hosted on IPFS reports a blocked protocol instead of a logo.
  *
  * Returns '' when the URI names nothing readable — unparseable, or an ipfs address with a
- * malformed CID. Other schemes pass through unchanged, for `fetchResource` to reject.
+ * malformed CID. Any other URI passes through unchanged.
  */
 function resolveMetadataUri(uri: string): string {
     const url = parseUrl(uri);
     if (!url) return '';
-    return url.protocol === IPFS_PROTOCOL ? resolveIpfsUri(url) : uri;
+    const ipfs = resolveIpfsUri(url);
+    if (!ipfs) return uri;
+    return ipfs.kind === 'gateway' ? ipfs.uri : '';
 }
 
 /**
@@ -131,9 +133,6 @@ function resolveMetadataUri(uri: string): string {
  * `fetchResource` in process rather than requesting `/api/metadata/proxy` over HTTP. Same
  * hardening — per-hop private-IP rejection, protocol and redirect validation, size cap — with
  * no round trip, and nothing derived from the incoming request's host.
- *
- * Resolves to `null`, not `undefined`, because `TokenInfo.logoURI` is `string | null` in the
- * UTL REST contract and this value is serialised straight into it.
  */
 async function fetchLogoUri(
     metadata: Metadata,
@@ -142,7 +141,7 @@ async function fetchLogoUri(
 ): Promise<string | null> {
     // Covers a mint with no `uri` at all, as well as one naming nothing readable.
     const uri = resolveMetadataUri(metadata.uri);
-    // eslint-disable-next-line unicorn/no-null -- `TokenInfo.logoURI` is `string | null` per the UTL contract
+    // eslint-disable-next-line unicorn/no-null -- `TokenInfo` requires a `logoURI` key, and JSON omits an `undefined` value
     if (!uri) return null;
 
     const timeout = Math.min(METAPLEX_TIMEOUT_MS, deadline - Date.now());
