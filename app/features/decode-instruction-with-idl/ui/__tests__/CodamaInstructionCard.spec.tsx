@@ -1,11 +1,20 @@
 import { gen } from '@__fixtures__/gen';
 import { createProgramClient, type ProgramMethodBuilder } from '@codama/dynamic-client';
 import { parseInstruction } from '@codama/dynamic-parsers';
-import { TxInstructionSurface } from '@entities/instruction-card';
+import { InstructionNodeCard } from '@components/instruction/InstructionNodeCard';
+import {
+    inspectorSurface,
+    type InstructionSurface,
+    InstructionSurfaceProvider,
+    toRawInstructionNode,
+} from '@entities/instruction-card';
 import { AccountRole, isSignerRole, isWritableRole } from '@solana/kit';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
+    enumEmptyVariantTypeNode,
+    enumStructVariantTypeNode,
+    enumTypeNode,
     fieldDiscriminatorNode,
     type InstructionAccountNode,
     instructionAccountNode,
@@ -26,24 +35,14 @@ import { toKitInstruction } from '@/app/shared/lib/web3js-compat';
 
 import { CodamaInstructionCard } from '../CodamaInstructionCard';
 
-vi.mock('@/app/components/instruction/InstructionCard', () => ({
-    InstructionCard: ({ children, title }: { children: React.ReactNode; title: string }) => (
-        <div data-testid="instruction-card">
-            <div data-testid="instruction-card-title">{title}</div>
-            <table>
-                <tbody>{children}</tbody>
-            </table>
-        </div>
-    ),
-}));
-
-vi.mock('@/app/components/instruction/UnknownDetailsCard', () => ({
+vi.mock('@entities/instruction-card', async importOriginal => ({
+    ...(await importOriginal<typeof import('@entities/instruction-card')>()),
     UnknownDetailsCard: () => <div data-testid="unknown-card" />,
 }));
 
 vi.mock('@/app/components/common/Address', () => ({
-    Address: ({ pubkey, overrideText }: { pubkey: PublicKey; overrideText?: string }) => (
-        <div data-testid="address">{overrideText ?? pubkey.toBase58()}</div>
+    Address: ({ pubkey, fallbackText }: { pubkey: PublicKey; fallbackText?: string }) => (
+        <div data-testid="address">{fallbackText ?? pubkey.toBase58()}</div>
     ),
 }));
 
@@ -78,6 +77,26 @@ const COUNTER_IDL = rootNode(
                 discriminator: 3,
                 name: 'configure',
             }),
+            counterInstruction({
+                arguments: [
+                    instructionArgumentNode({
+                        name: 'mode',
+                        type: enumTypeNode([enumEmptyVariantTypeNode('locking'), enumEmptyVariantTypeNode('burning')]),
+                    }),
+                    instructionArgumentNode({
+                        name: 'limit',
+                        type: enumTypeNode([
+                            enumEmptyVariantTypeNode('unlimited'),
+                            enumStructVariantTypeNode(
+                                'capped',
+                                structTypeNode([structFieldTypeNode({ name: 'max', type: numberTypeNode('u8') })]),
+                            ),
+                        ]),
+                    }),
+                ],
+                discriminator: 4,
+                name: 'setMode',
+            }),
         ],
         name: 'counter',
         publicKey: PROGRAM.toBase58(),
@@ -92,7 +111,7 @@ describe('CodamaInstructionCard', () => {
             client.methods.increment({ amount: 42 }).accounts({ authority: AUTHORITY, vaultAccount: VAULT }),
         );
 
-        expect(screen.getByTestId('instruction-card-title')).toHaveTextContent('Counter: Increment');
+        expect(screen.getByText('Counter: Increment')).toBeInTheDocument();
         expect(screen.getByText('Counter')).toBeInTheDocument();
 
         const authorityRow = screen.getByTestId('account-row-0');
@@ -173,6 +192,20 @@ describe('CodamaInstructionCard', () => {
         expect(screen.getByText('Expand')).toBeInTheDocument();
     });
 
+    it('should render decoded enums by their variant names', async () => {
+        await renderBuilt(client.methods.setMode({ limit: { __kind: 'Capped', max: 7 }, mode: 'burning' }));
+
+        expect(screen.getByTestId('ix-args-0-0')).toHaveTextContent('modeenumBurning');
+        expect(screen.getByTestId('ix-args-0-1')).toHaveTextContent('limit');
+        expect(screen.getByTestId('ix-args-0-1')).toHaveTextContent('Capped');
+
+        fireEvent.click(screen.getByText('Expand'));
+
+        expect(screen.getByTestId('ix-args-1-0')).toHaveTextContent('max');
+        expect(screen.getByTestId('ix-args-1-0')).toHaveTextContent('7');
+        expect(screen.queryByText('__discriminator')).not.toBeInTheDocument();
+    });
+
     it('should render the Unknown card when the parse does not start at a root node', () => {
         renderCard({
             accounts: [],
@@ -203,9 +236,12 @@ async function renderBuilt(builder: ProgramMethodBuilder) {
 
 function renderInstruction(ix: TransactionInstruction) {
     return render(
-        <TxInstructionSurface result={{ err: null }}>
-            <CodamaInstructionCard ix={ix} index={0} parsedIx={parseInstruction(COUNTER_IDL, toKitInstruction(ix))} />
-        </TxInstructionSurface>,
+        <InstructionSurfaceProvider surface={SURFACE}>
+            <CodamaInstructionCard
+                node={toRawInstructionNode({ index: 0, ix })}
+                parsedIx={parseInstruction(COUNTER_IDL, toKitInstruction(ix))}
+            />
+        </InstructionSurfaceProvider>,
     );
 }
 
@@ -225,11 +261,18 @@ function toTransactionInstruction({
     });
 }
 
+const SURFACE: InstructionSurface = {
+    ...inspectorSurface({ Card: InstructionNodeCard, instructionData: () => undefined }),
+    collapsible: false,
+    validateProgram: false,
+};
+
 function renderCard(parsedIx: ReturnType<typeof makeParsedIx>) {
+    const ix = makeIx(parsedIx.accounts);
     return render(
-        <TxInstructionSurface result={{ err: null }}>
-            <CodamaInstructionCard ix={makeIx(parsedIx.accounts)} index={0} parsedIx={parsedIx as never} />
-        </TxInstructionSurface>,
+        <InstructionSurfaceProvider surface={SURFACE}>
+            <CodamaInstructionCard node={toRawInstructionNode({ index: 0, ix })} parsedIx={parsedIx as never} />
+        </InstructionSurfaceProvider>,
     );
 }
 

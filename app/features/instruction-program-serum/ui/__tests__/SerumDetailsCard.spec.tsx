@@ -1,53 +1,25 @@
 /* eslint-disable no-restricted-syntax -- test assertions use RegExp for pattern matching */
 import { gen } from '@__fixtures__/gen';
-import { OPEN_BOOK_PROGRAM_IDS } from '@explorer/decoder-serum';
+import { toInstructionNode } from '@entities/instruction-card';
+import { createInstructionParserDispatcher, isParsedInstruction } from '@entities/instruction-parser';
+import { OPEN_BOOK_PROGRAM_IDS, SERUM_DEX_V3_PROGRAM_IDS } from '@explorer/decoder-serum';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 
-vi.mock('next/navigation', () => ({
-    usePathname: vi.fn(),
-    useRouter: vi.fn(() => ({ push: vi.fn() })),
-    useSearchParams: vi.fn(() => ({ get: vi.fn(), has: vi.fn(), toString: () => '' })),
-}));
+import { findCell, readAddress, renderTxCard } from '@/app/__tests__/card-harness';
 
-import { AccountsProvider } from '@/app/providers/accounts';
-import { ClusterProvider } from '@/app/providers/cluster';
-import { ScrollAnchorProvider } from '@/app/providers/scroll-anchor';
-import { TransactionsProvider } from '@/app/providers/transactions';
-
+import { serumInstructionParsers } from '../../lib/serum-client';
 import { SerumDetailsCard } from '../SerumDetailsCard';
+
+vi.mock('next/navigation', () => import('@/app/__tests__/next-navigation'));
 
 // Authentic instruction data from mainnet OpenBook txs (2fHxffhsx9pJ… / 2DJ9K7gZfmtU…).
 const NEW_ORDER_V3_DATA =
     '000a0000000100000050c30000000000000400000000000000400d03000000000000000000010000000000000000000000ffff';
 const CONSUME_EVENTS_DATA = '00030000002000';
 
-function makeInstruction(dataHex: string, keyCount: number): TransactionInstruction {
-    return new TransactionInstruction({
-        data: Buffer.from(dataHex, 'hex'),
-        keys: Array.from({ length: keyCount }, (_, i) => ({
-            isSigner: false,
-            isWritable: false,
-            pubkey: gen.publicKey(i),
-        })),
-        programId: new PublicKey(OPEN_BOOK_PROGRAM_IDS.mainnet),
-    });
-}
-
-function renderCard(ix: TransactionInstruction) {
-    return render(
-        <ScrollAnchorProvider>
-            <ClusterProvider>
-                <TransactionsProvider>
-                    <AccountsProvider>
-                        <SerumDetailsCard index={0} ix={ix} result={{ err: null }} signature={gen.signature(0)} />
-                    </AccountsProvider>
-                </TransactionsProvider>
-            </ClusterProvider>
-        </ScrollAnchorProvider>,
-    );
-}
+const dispatcher = createInstructionParserDispatcher(serumInstructionParsers);
 
 describe('@features/instruction-program-serum', () => {
     describe('SerumDetailsCard', () => {
@@ -79,12 +51,22 @@ describe('@features/instruction-program-serum', () => {
             await waitFor(() => {
                 expect(screen.getByText(/OpenBook Dex Program: Consume Events/)).toBeInTheDocument();
             });
-            expect(screen.getByText('Open Orders')).toBeInTheDocument();
-            expect(screen.getByText(gen.publicKey(0).toBase58())).toBeInTheDocument();
-            expect(screen.getByText(gen.publicKey(1).toBase58())).toBeInTheDocument();
+            expect(readAddress(findCell('Open Orders'))).toBe(
+                [gen.publicKey(0).toBase58(), gen.publicKey(1).toBase58()].join(','),
+            );
             expect(screen.getByText('Event Queue')).toBeInTheDocument();
             expect(screen.getByText('Limit')).toBeInTheDocument();
             expect(screen.getByText('32')).toBeInTheDocument();
+        });
+
+        test('should omit the Open Orders row for a Consume Events instruction with no open-orders account', async () => {
+            renderCard(makeInstruction(CONSUME_EVENTS_DATA, 4));
+
+            // waitFor's act() boundary absorbs ClusterProvider's post-mount dispatch
+            await waitFor(() => {
+                expect(screen.getByText('Event Queue')).toBeInTheDocument();
+            });
+            expect(screen.queryByText('Open Orders')).not.toBeInTheDocument();
         });
 
         test('should fall back to the raw card with an "Unknown" title for undecodable data', async () => {
@@ -96,5 +78,71 @@ describe('@features/instruction-program-serum', () => {
             });
             expect(screen.queryByText('Market')).not.toBeInTheDocument();
         });
+
+        test('should render a deprecated Serum deployment name-only under its program name', async () => {
+            renderCard(makeInstruction(CONSUME_EVENTS_DATA, 6, SERUM_DEX_V3_PROGRAM_IDS.mainnet));
+
+            // waitFor's act() boundary absorbs ClusterProvider's post-mount dispatch
+            await waitFor(() => {
+                expect(screen.getByText(/Serum Dex v3 \(deprecated\): Consume Events/)).toBeInTheDocument();
+            });
+            expect(screen.queryByText('Event Queue')).not.toBeInTheDocument();
+        });
+
+        test('should title an instruction on a deprecated deployment "Unknown" when its code is unrecognized', async () => {
+            renderCard(makeInstruction('00ff000000', 0, SERUM_DEX_V3_PROGRAM_IDS.mainnet));
+
+            // waitFor's act() boundary absorbs ClusterProvider's post-mount dispatch
+            await waitFor(() => {
+                expect(screen.getByText(/Serum Dex v3 \(deprecated\): Unknown/)).toBeInTheDocument();
+            });
+        });
+
+        test('should title a named code with no vendored layout from the name table', async () => {
+            renderCard(makeInstruction('0007000000', 0));
+
+            // waitFor's act() boundary absorbs ClusterProvider's post-mount dispatch
+            await waitFor(() => {
+                expect(screen.getByText(/OpenBook Dex Program: Disable Market/)).toBeInTheDocument();
+            });
+            expect(screen.queryByText('Market')).not.toBeInTheDocument();
+        });
+
+        test('should title a recognized code with a truncated payload by name', async () => {
+            renderCard(makeInstruction('000a00000001', 0));
+
+            // waitFor's act() boundary absorbs ClusterProvider's post-mount dispatch
+            await waitFor(() => {
+                expect(screen.getByText(/OpenBook Dex Program: New Order v3/)).toBeInTheDocument();
+            });
+        });
     });
 });
+
+function makeInstruction(
+    dataHex: string,
+    keyCount: number,
+    programId: string = OPEN_BOOK_PROGRAM_IDS.mainnet,
+): TransactionInstruction {
+    return new TransactionInstruction({
+        data: Buffer.from(dataHex, 'hex'),
+        keys: Array.from({ length: keyCount }, (_, i) => ({
+            isSigner: false,
+            isWritable: false,
+            pubkey: gen.publicKey(i),
+        })),
+        programId: new PublicKey(programId),
+    });
+}
+
+function renderCard(raw: TransactionInstruction) {
+    const dispatched = dispatcher.fromTransactionInstruction(raw);
+    if (!dispatched) throw new Error('no Serum parser registered for the fixture program id');
+
+    return renderTxCard(
+        <SerumDetailsCard
+            node={toInstructionNode({ index: 0, ix: raw })}
+            parsed={isParsedInstruction(dispatched) ? dispatched.parsed : undefined}
+        />,
+    );
+}

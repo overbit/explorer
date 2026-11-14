@@ -1,10 +1,9 @@
 import { CompressedNftAccountHeader } from '@components/account/CompressedNftCard';
 import { MetaplexNFTHeader } from '@components/account/MetaplexNFTHeader';
-import { isNFTokenAccount } from '@components/account/nftoken/isNFTokenAccount';
-import { NFTokenAccountHeader } from '@components/account/nftoken/NFTokenAccountHeader';
 import { useDasImage } from '@entities/digital-asset';
 import { isMetaplexNFT } from '@entities/nft';
 import { STAKE_PROGRAM_LABEL } from '@explorer/parsers';
+import { NftokenAccountHeader, parseNftokenAccount } from '@features/nftoken';
 import {
     Account,
     isTokenProgramData,
@@ -22,7 +21,7 @@ import { create } from 'superstruct';
 import { dasImageAddress } from '@/app/components/account/das-image-address';
 import { ProgramHeader } from '@/app/components/shared/account/ProgramHeader';
 import { ProxiedImage } from '@/app/features/metadata';
-import { getProxiedUri } from '@/app/features/metadata/utils';
+import { getProxiedUri } from '@/app/shared/lib/metadata-proxy';
 import { type FullTokenInfo, isRedactedTokenAddress } from '@/app/utils/token-info';
 
 export function AccountHeader({
@@ -46,20 +45,15 @@ export function AccountHeader({
 
     const fallback = <AccountDetailsHeader title="Account" />;
 
-    // Headers derived purely from on-chain account data (NFTs, programs) don't
-    // depend on the async token-info (UTL) fetch, so resolve them before the
-    // isTokenInfoLoading gate. Gating them on it would blank and *remount* the
-    // header — re-requesting its image and flickering — on every account refetch
-    // or token-info revalidation. (The accounts cache keeps stale data during a
-    // refetch, so these conditions still hold and the header stays mounted.)
+    // NFT and program headers read only account data and must still render while the token-info fetch loads.
     // TODO: adopt @explorer/entity-inspector's accounts module (src/accounts: classifyAccountKindBase + kinds.ts; needs a browser-safe ./accounts subpath) instead of this inline kind chain
     if (isMetaplexNFT(parsedData, mintInfo) && parsedData.nftData) {
         return <MetaplexNFTHeader nftData={parsedData.nftData} />;
     }
 
-    const nftokenNFT = account && isNFTokenAccount(account);
-    if (nftokenNFT && account) {
-        return <NFTokenAccountHeader account={account} />;
+    const nftoken = account && parseNftokenAccount(account);
+    if (nftoken) {
+        return <NftokenAccountHeader nftoken={nftoken} />;
     }
 
     if (isProgram) {

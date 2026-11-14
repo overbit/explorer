@@ -1,225 +1,124 @@
-import { HexData } from '@components/common/HexData';
-import { cn } from '@components/shared/utils';
-import { extractEventsFromLogs, type ProgramEventPayload } from '@entities/program-logs';
+import {
+    DecodedInstructionCard,
+    type FieldValue,
+    type InstructionArg,
+    type InstructionEvent,
+    type RawInstructionNode,
+    useInstructionSurface,
+} from '@entities/instruction-card';
+import { extractEventsFromLogs } from '@entities/program-logs';
 import { useTransactionDetails } from '@providers/transactions';
-import { PublicKey, SignatureResult, TransactionInstruction } from '@solana/web3.js';
-import React, { useMemo, useState } from 'react';
-import { Code } from 'react-feather';
+import { PublicKey } from '@solana/web3.js';
+import React from 'react';
 
-import { Address } from '@/app/components/common/Address';
 import { fromBase64 } from '@/app/shared/lib/bytes';
+import { toKitAddress } from '@/app/shared/lib/web3js-compat';
 import {
     decodeManifestEvent,
     decodeManifestInstruction,
     decodeManifestWrapperInstruction,
     isManifestProgramId,
-    ManifestDecodedAccount,
-    ManifestDecodedField,
+    type ManifestDecodedField,
+    type ManifestDecodedInstruction,
 } from '@/app/utils/manifest';
 
-import { InstructionCard } from '../InstructionCard';
-import { UnknownDetailsCard } from '../UnknownDetailsCard';
-
-export function ManifestDetailsCard(props: {
-    ix: TransactionInstruction;
-    index: number;
-    result: SignatureResult;
-    signature: string;
-    innerCards?: JSX.Element[];
-    childIndex?: number;
-}) {
-    const { ix, signature, index } = props;
-    const isManifestInstruction = isManifestProgramId(ix.programId);
-    const decodedInstruction = useMemo(
+/**
+ * The upstream instruction renderer now uses InstructionNodeCard instead of the
+ * removed legacy InstructionCard. Keep the fork's Manifest decoder and render
+ * its account labels, arguments and log events through the new shared card.
+ */
+export function ManifestDetailsCard({ node, fallback }: { node: RawInstructionNode; fallback: React.ReactNode }) {
+    const { signature } = useInstructionSurface();
+    const { raw } = node;
+    const isManifest = isManifestProgramId(raw.programId);
+    const decoded = React.useMemo(
         () =>
-            isManifestInstruction
-                ? decodeManifestInstruction(ix.data)
-                : decodeManifestWrapperInstruction(ix.data, ix.programId),
-        [isManifestInstruction, ix.data, ix.programId],
+            isManifest
+                ? decodeManifestInstruction(raw.data)
+                : decodeManifestWrapperInstruction(raw.data, raw.programId),
+        [isManifest, raw.data, raw.programId],
     );
+
+    if (!decoded) return <>{fallback}</>;
+
+    return signature && isManifest ? (
+        <ManifestLoggedCard node={node} decoded={decoded} signature={signature} />
+    ) : (
+        <ManifestCard node={node} decoded={decoded} />
+    );
+}
+
+function ManifestLoggedCard({
+    node,
+    decoded,
+    signature,
+}: {
+    node: RawInstructionNode;
+    decoded: ManifestDecodedInstruction;
+    signature: string;
+}) {
     const details = useTransactionDetails(signature);
-
-    const eventCards = useMemo(() => {
-        if (!isManifestInstruction) return undefined;
-
+    const events = React.useMemo((): InstructionEvent[] => {
         const transactionWithMeta = details?.data?.transactionWithMeta;
         const logMessages = transactionWithMeta?.meta?.logMessages;
-        if (!logMessages) return undefined;
+        if (!logMessages || !transactionWithMeta) return [];
 
-        const programIds = transactionWithMeta.transaction.message.instructions.map(instruction =>
-            instruction.programId.toBase58(),
+        const programIds = transactionWithMeta.transaction.message.instructions.map(ix =>
+            ix.programId.toBase58(),
         );
-        const eventPayloads = extractEventsFromLogs(logMessages, index, programIds);
-        if (eventPayloads.length === 0) return undefined;
+        return extractEventsFromLogs(logMessages, node.index, programIds).map((payload): InstructionEvent => {
+            const data = fromBase64(payload.data);
+            const event = decodeManifestEvent(payload.data);
+            return event
+                ? { kind: 'decoded', name: event.title, args: event.fields.map(manifestArg), data }
+                : { kind: 'unknown', data };
+        });
+    }, [details, node.index]);
 
-        return [<ManifestEventsCard key="events" eventPayloads={eventPayloads} instructionIndex={index} />];
-    }, [details, index, isManifestInstruction]);
-
-    if (!decodedInstruction) {
-        return <UnknownDetailsCard {...props} />;
-    }
-
-    return (
-        <InstructionCard title={decodedInstruction.title} {...props} eventCards={eventCards}>
-            <tr>
-                <td>Program</td>
-                <td className="text-lg-end" colSpan={2}>
-                    <Address pubkey={ix.programId} alignRight link raw overrideText="Manifest" />
-                </td>
-            </tr>
-            <tr>
-                <td>Instruction Discriminator</td>
-                <td className="text-lg-end font-monospace" colSpan={2}>
-                    {decodedInstruction.instructionDiscriminator}
-                </td>
-            </tr>
-            <tr className="table-sep">
-                <td>Account Name</td>
-                <td className="text-lg-end" colSpan={2}>
-                    Address
-                </td>
-            </tr>
-            {ix.keys.map(({ pubkey, isSigner, isWritable }, keyIndex) => {
-                const account = decodedInstruction.accounts[keyIndex];
-                return (
-                    <tr key={keyIndex}>
-                        <td>
-                            <div className="d-md-inline me-2">{account?.label ?? `Account #${keyIndex + 1}`}</div>
-                            {isWritable && <span className="badge bg-danger-soft me-1">Writable</span>}
-                            {isSigner && <span className="badge bg-info-soft me-1">Signer</span>}
-                        </td>
-                        <td className="text-lg-end" colSpan={2}>
-                            <Address pubkey={pubkey} alignRight link />
-                        </td>
-                    </tr>
-                );
-            })}
-            {decodedInstruction.args.length > 0 && (
-                <>
-                    <tr className="table-sep">
-                        <td>Argument Name</td>
-                        <td>Type</td>
-                        <td className="text-lg-end">Value</td>
-                    </tr>
-                    {decodedInstruction.args.map(arg => (
-                        <ManifestFieldRow key={arg.name} field={arg} />
-                    ))}
-                </>
-            )}
-        </InstructionCard>
-    );
+    return <ManifestCard node={node} decoded={decoded} events={events} />;
 }
 
-function ManifestEventsCard({
-    eventPayloads,
-    instructionIndex,
+function ManifestCard({
+    node,
+    decoded,
+    events,
 }: {
-    eventPayloads: ProgramEventPayload[];
-    instructionIndex: number;
+    node: RawInstructionNode;
+    decoded: ManifestDecodedInstruction;
+    events?: readonly InstructionEvent[];
 }) {
-    const decodedEvents = eventPayloads
-        .map(payload => ({ event: decodeManifestEvent(payload.data), rawEventData: payload.data }))
-        .filter((entry): entry is { event: ManifestDecodedAccount; rawEventData: string } => entry.event !== undefined);
-
-    if (decodedEvents.length === 0) return undefined;
-
     return (
-        <>
-            {decodedEvents.map(({ event, rawEventData }, eventIndex) => (
-                <ManifestEventCard
-                    key={eventIndex}
-                    event={event}
-                    eventIndex={eventIndex}
-                    instructionIndex={instructionIndex}
-                    rawEventData={rawEventData}
-                />
-            ))}
-        </>
+        <DecodedInstructionCard
+            node={node}
+            title={decoded.title}
+            programName="Manifest"
+            accountNames={decoded.accounts.map(account => account.label)}
+            args={[
+                {
+                    kind: 'leaf',
+                    name: 'Instruction Discriminator',
+                    type: 'u8',
+                    value: { kind: 'text', value: String(decoded.instructionDiscriminator) },
+                },
+                ...decoded.args.map(manifestArg),
+            ]}
+            events={events}
+        />
     );
 }
 
-function ManifestEventCard({
-    event,
-    eventIndex,
-    instructionIndex,
-    rawEventData,
-}: {
-    event: ManifestDecodedAccount;
-    eventIndex: number;
-    instructionIndex: number;
-    rawEventData: string;
-}) {
-    const [showRaw, setShowRaw] = useState(false);
-
-    return (
-        <div className="card mb-2">
-            <div className="card-header">
-                <h3 className="card-header-title d-flex align-items-center mb-0">
-                    <span className="badge bg-info-soft me-2">
-                        #{instructionIndex + 1}.{eventIndex + 1}
-                    </span>
-                    {event.title}
-                </h3>
-                <button
-                    className={cn('btn btn-sm d-flex align-items-center', showRaw ? 'btn-black active' : 'btn-white')}
-                    onClick={() => setShowRaw(r => !r)}
-                >
-                    <Code className="me-2" size={13} /> Raw
-                </button>
-            </div>
-            <div className="table-responsive mb-0">
-                <table className="table-sm table-nowrap card-table table">
-                    <tbody className="list">
-                        {showRaw ? (
-                            <tr>
-                                <td>
-                                    Event Data <span className="text-muted">(Hex)</span>
-                                </td>
-                                <td className="text-lg-end">
-                                    <HexData raw={fromBase64(rawEventData)} />
-                                </td>
-                            </tr>
-                        ) : (
-                            <>
-                                <tr className="table-sep">
-                                    <td>Field Name</td>
-                                    <td>Type</td>
-                                    <td className="text-lg-end">Value</td>
-                                </tr>
-                                {event.fields.map(field => (
-                                    <ManifestFieldRow key={field.name} field={field} />
-                                ))}
-                            </>
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    );
-}
-
-function ManifestFieldRow({ field }: { field: ManifestDecodedField }) {
-    return (
-        <tr>
-            <td>{field.label}</td>
-            <td>{field.type}</td>
-            <td className="text-lg-end">{renderManifestField(field)}</td>
-        </tr>
-    );
-}
-
-function renderManifestField(field: ManifestDecodedField): React.ReactNode {
+function manifestArg(field: ManifestDecodedField): InstructionArg {
+    let value: FieldValue;
     if (field.type === 'publicKey' && typeof field.value === 'string') {
-        return <Address pubkey={new PublicKey(field.value)} alignRight link raw />;
+        value = { kind: 'address', address: toKitAddress(new PublicKey(field.value)) };
+    } else if (typeof field.value === 'string') {
+        value = { kind: 'string', value: field.value };
+    } else {
+        value = {
+            kind: 'text',
+            value: Array.isArray(field.value) ? field.value.join(', ') : String(field.value),
+        };
     }
 
-    if (typeof field.value === 'boolean') {
-        return field.value ? 'Yes' : 'No';
-    }
-
-    if (Array.isArray(field.value)) {
-        return <span className="font-monospace">[{field.value.join(', ')}]</span>;
-    }
-
-    return <span className="font-monospace">{field.value}</span>;
+    return { kind: 'leaf', name: field.label, type: field.type, value };
 }

@@ -4,9 +4,12 @@ import { resolveZkElGamalProofName } from '@entities/zk-elgamal-proof/@x/transac
 import { resolveMangoInstructionName } from '@explorer/decoder-mango/detection';
 import { resolvePythInstructionName } from '@explorer/decoder-pyth/detection';
 import { resolveSerumInstructionName } from '@explorer/decoder-serum/detection';
+import { resolveTokenSwapInstructionName } from '@explorer/decoder-token-swap/detection';
+import { resolveWormholeInstructionName } from '@explorer/decoder-wormhole/detection';
 
 import { resolveComputeBudgetInstructionName } from './compute-budget-name';
 import { resolveMemoInstructionName } from './memo-name';
+import { resolveNativeProgramInstructionName } from './native-program-name';
 import { resolveProgramClientInstructionName } from './program-client-name';
 import type { InstructionNameLookup, InstructionNames, InstructionSummary, ResolvedNames } from './types';
 
@@ -28,9 +31,14 @@ const NAME_SOURCES: readonly NameSource[] = [
     ({ programId, data }) => resolveMangoInstructionName(programId, data),
     ({ programId, data }) => resolvePythInstructionName(programId, data),
     ({ programId, data }) => resolveSerumInstructionName(programId, data),
+    // Token Swap is frozen and ships no IDL; its names come from a leading u8 tag.
+    ({ programId, data }) => resolveTokenSwapInstructionName(programId, data),
+    // Wormhole v1 is frozen and ships no IDL; its names come from a leading u8 tag.
+    ({ programId, data }) => resolveWormholeInstructionName(programId, data),
     // Ahead of the IDL so a simulated System/Token instruction is worded as the RPC words it — see the
     // override map in program-client-name.
     lookup => resolveProgramClientInstructionName(lookup),
+    lookup => resolveNativeProgramInstructionName(lookup),
     ({ programId, data }, idlNames) => idlNames.get(programId)?.resolveInstructionName?.(data),
 ];
 
@@ -80,7 +88,7 @@ export function applyNameSources(names: InstructionNames, idlNames: Map<string, 
  * @param idlNames - IDL-derived names per program id, for the programs in this transaction
  */
 export function applyNameSourcesToSummaries(
-    summaries: InstructionSummary[],
+    summaries: readonly InstructionSummary[],
     idlNames: Map<string, ProgramIdlNames>,
 ): InstructionSummary[] {
     return summaries.map(summary => {

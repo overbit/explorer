@@ -5,6 +5,7 @@ import { Cluster, clusterSelection, clusterUrl } from '@utils/cluster';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { rpcStub } from '@/app/__tests__/mock-rpc';
 import { Logger } from '@/app/shared/lib/logger';
 
 vi.mock('next/navigation');
@@ -14,9 +15,7 @@ const { useClusterMock, getMultipleAccounts, getRpc, fetchNftData } = vi.hoisted
     return {
         fetchNftData: vi.fn(),
         getMultipleAccounts,
-        getRpc: vi.fn((_url: string) => ({
-            getMultipleAccounts: (...args: unknown[]) => ({ send: () => getMultipleAccounts(...args) }),
-        })),
+        getRpc: vi.fn((_url: string) => rpcStub({ getMultipleAccounts })),
         useClusterMock: vi.fn(),
     };
 });
@@ -36,7 +35,14 @@ vi.mock('@entities/nft', async importOriginal => {
     return { ...actual, fetchNftData };
 });
 
-import { AccountsProvider, FetchersContext, type State, StateContext, useFetchAccountInfo } from '..';
+import {
+    AccountsProvider,
+    type FetchAccountDataMode,
+    FetchersContext,
+    type State,
+    StateContext,
+    useFetchAccountInfo,
+} from '..';
 
 type Captured = NonNullable<React.ContextType<typeof FetchersContext>>;
 
@@ -62,6 +68,28 @@ function Capture() {
     return null;
 }
 
+/**
+ * Fetches from a mount effect, the shape real consumers use (the inspector's `AccountInfo`,
+ * `usePmpAccountPayload`). React flushes effects bottom-up, so this runs BEFORE the provider's own effect
+ * and fetches through the fetchers of the first render — the very set the provider cleanup cancels.
+ */
+function fetchOnMount(pubkeys: PublicKey[], dataMode: FetchAccountDataMode) {
+    return function FetchOnMount() {
+        const fetchAccount = useFetchAccountInfo();
+        React.useEffect(() => {
+            for (const pubkey of pubkeys) fetchAccount(pubkey, dataMode);
+        }, []); // eslint-disable-line react-hooks/exhaustive-deps -- must fetch on the first commit only
+        return null;
+    };
+}
+
+/** Runs the debounce out so a batch either reaches the RPC or is provably gone. */
+async function flushDebounce() {
+    await act(async () => {
+        await vi.advanceTimersByTimeAsync(PAST_DEBOUNCE_MS);
+    });
+}
+
 describe('AccountsProvider', () => {
     beforeEach(() => {
         captured = undefined;
@@ -73,43 +101,15 @@ describe('AccountsProvider', () => {
     });
 
     it('should cancel pending fetcher timeouts when the provider unmounts', async () => {
-        const { unmount } = render(
-            <AccountsProvider>
-                <Capture />
-            </AccountsProvider>,
-        );
-        await waitFor(() => expect(captured).toBeDefined());
-        if (!captured) throw new Error('Fetchers context was not captured');
-        const fetchers = captured;
-
-        const parsedCancel = vi.spyOn(fetchers.parsed, 'cancel');
-        const rawCancel = vi.spyOn(fetchers.raw, 'cancel');
-        const skipCancel = vi.spyOn(fetchers.skip, 'cancel');
-
-        fetchers.parsed.fetch(TEST_PUBKEY);
+        const { cancelCalls, unmount } = await renderWithPendingFetch();
 
         unmount();
 
-        expect(parsedCancel).toHaveBeenCalledTimes(1);
-        expect(rawCancel).toHaveBeenCalledTimes(1);
-        expect(skipCancel).toHaveBeenCalledTimes(1);
+        expect(cancelCalls()).toEqual([1, 1, 1]);
     });
 
     it('should cancel the old fetchers when the cluster changes', async () => {
-        const { rerender } = render(
-            <AccountsProvider>
-                <Capture />
-            </AccountsProvider>,
-        );
-        await waitFor(() => expect(captured).toBeDefined());
-        if (!captured) throw new Error('Fetchers context was not captured');
-        const oldFetchers = captured;
-
-        const parsedCancel = vi.spyOn(oldFetchers.parsed, 'cancel');
-        const rawCancel = vi.spyOn(oldFetchers.raw, 'cancel');
-        const skipCancel = vi.spyOn(oldFetchers.skip, 'cancel');
-
-        oldFetchers.parsed.fetch(TEST_PUBKEY);
+        const { cancelCalls, fetchers, rerender } = await renderWithPendingFetch();
 
         mockCluster(Cluster.Testnet, clusterUrl(clusterSelection(Cluster.Testnet)));
         rerender(
@@ -118,37 +118,42 @@ describe('AccountsProvider', () => {
             </AccountsProvider>,
         );
 
-        await waitFor(() => expect(captured).not.toBe(oldFetchers));
+        await waitFor(() => expect(captured).not.toBe(fetchers));
 
-        expect(parsedCancel).toHaveBeenCalledTimes(1);
-        expect(rawCancel).toHaveBeenCalledTimes(1);
-        expect(skipCancel).toHaveBeenCalledTimes(1);
+        expect(cancelCalls()).toEqual([1, 1, 1]);
     });
+
+    async function renderWithPendingFetch() {
+        const view = render(
+            <AccountsProvider>
+                <Capture />
+            </AccountsProvider>,
+        );
+        await waitFor(() => expect(captured).toBeDefined());
+        if (!captured) throw new Error('Fetchers context was not captured');
+        const fetchers = captured;
+        const cancels = [fetchers.parsed, fetchers.raw, fetchers.skip].map(fetcher => vi.spyOn(fetcher, 'cancel'));
+
+        fetchers.parsed.fetch(TEST_PUBKEY);
+
+        return { ...view, cancelCalls: () => cancels.map(cancel => cancel.mock.calls.length), fetchers };
+    }
 });
 
 describe('AccountsProvider: fetch and mount', () => {
-    /**
-     * Fetches from a mount effect, the shape real consumers use (the inspector's `AccountInfo`,
-     * `usePmpAccountPayload`). React flushes effects bottom-up, so this runs BEFORE the provider's own effect
-     * and fetches through the fetchers of the first render — the very set the provider cleanup cancels.
-     */
-    function FetchOnMount() {
-        const fetchAccount = useFetchAccountInfo();
-        React.useEffect(() => {
-            fetchAccount(TEST_PUBKEY, 'skip');
-        }, []); // eslint-disable-line react-hooks/exhaustive-deps -- must fetch on the first commit only
-        return null;
-    }
+    const FetchOnMount = fetchOnMount([TEST_PUBKEY], 'skip');
 
     function renderProvider(children: React.ReactNode = <FetchOnMount />) {
         return render(<AccountsProvider>{children}</AccountsProvider>);
     }
 
-    /** Runs the debounce out so a batch either reaches the RPC or is provably gone. */
-    async function flushDebounce() {
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(PAST_DEBOUNCE_MS);
-        });
+    let entry: State['entries'][string] | undefined;
+    function CaptureEntry() {
+        const state = React.useContext(StateContext);
+        React.useEffect(() => {
+            entry = state?.entries[TEST_PUBKEY.toBase58()];
+        }, [state]);
+        return null;
     }
 
     beforeEach(() => {
@@ -239,6 +244,35 @@ describe('AccountsProvider: fetch and mount', () => {
         // A custom endpoint fails for reasons we do not control, so its failures are not ours to report.
         expect(vi.mocked(Logger.error)).not.toHaveBeenCalled();
     });
+
+    it('should keep the fetched data while a refetch of the same account runs', async () => {
+        getMultipleAccounts.mockResolvedValueOnce({
+            value: [
+                {
+                    data: ['', 'base64'],
+                    executable: false,
+                    lamports: 5n,
+                    owner: '11111111111111111111111111111111',
+                    space: 0n,
+                },
+            ],
+        });
+        renderProvider(
+            <>
+                <FetchOnMount />
+                <Capture />
+                <CaptureEntry />
+            </>,
+        );
+        await flushDebounce();
+
+        getMultipleAccounts.mockReturnValue(new Promise(() => {}));
+        act(() => captured?.skip.fetch(TEST_PUBKEY));
+        await flushDebounce();
+
+        expect(entry?.status).toBe(FetchStatus.Fetching);
+        expect(entry?.data?.lamports).toBe(5);
+    });
 });
 
 describe('AccountsProvider: NFT metadata', () => {
@@ -266,16 +300,6 @@ describe('AccountsProvider: NFT metadata', () => {
         };
     }
 
-    function fetchOnMount(pubkeys: PublicKey[]) {
-        return function FetchOnMount() {
-            const fetchAccount = useFetchAccountInfo();
-            React.useEffect(() => {
-                for (const pubkey of pubkeys) fetchAccount(pubkey, 'parsed');
-            }, []); // eslint-disable-line react-hooks/exhaustive-deps -- must fetch on the first commit only
-            return null;
-        };
-    }
-
     function EntryStatus({ pubkey }: { pubkey: PublicKey }) {
         const state = React.useContext(StateContext);
         const key = pubkey.toBase58();
@@ -298,12 +322,6 @@ describe('AccountsProvider: NFT metadata', () => {
         return entries[pubkey.toBase58()];
     }
 
-    async function flushDebounce() {
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(PAST_DEBOUNCE_MS);
-        });
-    }
-
     beforeEach(() => {
         vi.clearAllMocks();
         vi.useFakeTimers();
@@ -317,7 +335,7 @@ describe('AccountsProvider: NFT metadata', () => {
     });
 
     it('should not read NFT metadata by default', async () => {
-        const FetchMints = fetchOnMount([MINT_A, MINT_B]);
+        const FetchMints = fetchOnMount([MINT_A, MINT_B], 'parsed');
         render(
             <AccountsProvider>
                 <FetchMints />
@@ -329,7 +347,7 @@ describe('AccountsProvider: NFT metadata', () => {
     });
 
     it('should read NFT metadata once per mint when fetchNftMetadata is set', async () => {
-        const FetchMints = fetchOnMount([MINT_A, MINT_B]);
+        const FetchMints = fetchOnMount([MINT_A, MINT_B], 'parsed');
         render(
             <AccountsProvider fetchNftMetadata>
                 <FetchMints />
@@ -344,7 +362,7 @@ describe('AccountsProvider: NFT metadata', () => {
 
     it('should start the metadata read for every mint in a batch at once', async () => {
         fetchNftData.mockReturnValue(new Promise(() => {}));
-        const FetchMints = fetchOnMount([MINT_A, MINT_B]);
+        const FetchMints = fetchOnMount([MINT_A, MINT_B], 'parsed');
 
         render(
             <AccountsProvider fetchNftMetadata>
@@ -359,7 +377,7 @@ describe('AccountsProvider: NFT metadata', () => {
     it('should settle a non-mint account while the metadata read for a mint is pending', async () => {
         fetchNftData.mockReturnValue(new Promise(() => {}));
         getMultipleAccounts.mockResolvedValue({ value: [mintAccount(), systemAccount()] });
-        const FetchBoth = fetchOnMount([MINT_A, WALLET]);
+        const FetchBoth = fetchOnMount([MINT_A, WALLET], 'parsed');
 
         render(
             <AccountsProvider fetchNftMetadata>
@@ -378,7 +396,7 @@ describe('AccountsProvider: NFT metadata', () => {
         const metadata = { editionInfo: {}, json: undefined, metadata: { name: 'Test' } };
         getMultipleAccounts.mockResolvedValue({ value: [mintAccount()] });
         fetchNftData.mockResolvedValue(metadata);
-        const FetchMint = fetchOnMount([MINT_A]);
+        const FetchMint = fetchOnMount([MINT_A], 'parsed');
 
         render(
             <AccountsProvider fetchNftMetadata>

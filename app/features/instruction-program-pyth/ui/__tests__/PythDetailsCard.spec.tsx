@@ -1,5 +1,5 @@
-import { TxInstructionSurface } from '@entities/instruction-card';
-import { createInstructionParserDispatcher } from '@entities/instruction-parser';
+import { toInstructionNode } from '@entities/instruction-card';
+import { createInstructionParserDispatcher, isParsedInstruction } from '@entities/instruction-parser';
 import {
     PYTH_INSTRUCTION_TYPES,
     PYTH_INSTRUCTIONS,
@@ -7,23 +7,15 @@ import {
     type PythInstructionType,
 } from '@explorer/decoder-pyth';
 import { PublicKey, TransactionInstruction } from '@solana/web3.js';
-import { render, screen, waitFor } from '@testing-library/react';
-import React from 'react';
+import { screen, waitFor } from '@testing-library/react';
 import { vi } from 'vitest';
 
-vi.mock('next/navigation', () => ({
-    usePathname: vi.fn(),
-    useRouter: vi.fn(() => ({ push: vi.fn() })),
-    useSearchParams: vi.fn(() => ({ get: vi.fn(), has: vi.fn(), toString: () => '' })),
-}));
-
-import { AccountsProvider } from '@/app/providers/accounts';
-import { ClusterProvider } from '@/app/providers/cluster';
-import { ScrollAnchorProvider } from '@/app/providers/scroll-anchor';
-import { TransactionsProvider } from '@/app/providers/transactions';
+import { renderTxCard } from '@/app/__tests__/card-harness';
 
 import { pythInstructionParsers } from '../../lib/pyth-client';
 import { PythDetailsCard } from '../PythDetailsCard';
+
+vi.mock('next/navigation', () => import('@/app/__tests__/next-navigation'));
 
 const PROGRAM_ID = new PublicKey(PYTH_ORACLE_PROGRAM_IDS.mainnet);
 const PUBLISHER = new PublicKey('4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi');
@@ -105,21 +97,6 @@ describe('PythDetailsCard dispatch', () => {
             expect(screen.getByText(UNKNOWN_TITLE)).toBeInTheDocument();
         });
     });
-
-    // The node is assembled here, so a dropped field silently loses the CPI children or misnumbers the card.
-    it('should carry inner cards and the nested position onto the shell', async () => {
-        renderCard(pythInstruction('InitMapping'), {
-            childIndex: 2,
-            index: 3,
-            innerCards: [<div key="inner">an inner instruction</div>],
-        });
-
-        await waitFor(() => {
-            expect(screen.getByText('Inner Instructions')).toBeInTheDocument();
-        });
-        expect(screen.getByText('an inner instruction')).toBeInTheDocument();
-        expect(screen.getByText('#4.3')).toBeInTheDocument();
-    });
 });
 
 function u32(value: number): number[] {
@@ -148,24 +125,14 @@ function rawInstruction(data: number[]): TransactionInstruction {
     return new TransactionInstruction({ data: Buffer.from(data), keys: KEYS, programId: PROGRAM_ID });
 }
 
-function renderCard(
-    raw: TransactionInstruction,
-    props: { childIndex?: number; index?: number; innerCards?: JSX.Element[] } = {},
-) {
+function renderCard(raw: TransactionInstruction) {
     const dispatched = dispatcher.fromTransactionInstruction(raw);
     if (!dispatched) throw new Error('no Pyth parser registered for the mainnet deployment');
 
-    return render(
-        <ScrollAnchorProvider>
-            <ClusterProvider>
-                <TransactionsProvider>
-                    <AccountsProvider>
-                        <TxInstructionSurface result={{ err: null }}>
-                            <PythDetailsCard ix={dispatched} raw={raw} index={0} {...props} />
-                        </TxInstructionSurface>
-                    </AccountsProvider>
-                </TransactionsProvider>
-            </ClusterProvider>
-        </ScrollAnchorProvider>,
+    return renderTxCard(
+        <PythDetailsCard
+            node={toInstructionNode({ index: 0, ix: raw })}
+            parsed={isParsedInstruction(dispatched) ? dispatched.parsed : undefined}
+        />,
     );
 }

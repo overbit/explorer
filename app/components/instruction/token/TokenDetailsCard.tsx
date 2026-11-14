@@ -1,88 +1,65 @@
-import { Address } from '@components/common/Address';
-import { useFetchAccountInfo, useMintAccountInfo, useTokenAccountInfo } from '@providers/accounts';
 import {
-    ParsedInstruction,
-    ParsedTransaction,
-    PublicKey,
-    SignatureResult,
-    TransactionInstruction,
-} from '@solana/web3.js';
-import { normalizeTokenAmount } from '@utils/index';
+    address,
+    argType,
+    DecodedInstructionCard,
+    type FieldValue,
+    type InstructionArg,
+    InstructionCardView,
+    InstructionFields,
+    type InstructionNode,
+    type RawInstructionNode,
+} from '@entities/instruction-card';
+import { fetchTokenInfoFromApi, getTokenInfoSwrKey } from '@entities/token-info';
+import { useFetchAccountInfo, useMintAccountInfo, useTokenAccountInfo } from '@providers/accounts';
+import { type AccountMeta, PublicKey } from '@solana/web3.js';
+import { capitalizeFirstLetter, normalizeTokenAmount } from '@utils/index';
 import { ParsedInfo } from '@validators/index';
-import React, { ComponentType } from 'react';
-import { create } from 'superstruct';
+import React from 'react';
+import { create, is, Struct } from 'superstruct';
 import useSWR from 'swr';
 
 import { useCluster } from '@/app/providers/cluster';
-import { BaseTable } from '@/app/shared/ui/Table';
+import { toKitAddress } from '@/app/shared/lib/web3js-compat';
 import { Cluster } from '@/app/utils/cluster';
 import { TOKEN_IDS } from '@/app/utils/programs';
-import { getTokenInfo, getTokenInfoSwrKey } from '@/app/utils/token-info';
 
-import { InstructionCard } from '../InstructionCard';
 import { IX_STRUCTS, IX_TITLES, TokenAmountUi, TokenInstructionType } from './types';
 
-type TitleInfoLessProps = Omit<InfoProps, 'info' | 'title'>;
+type TokenInfo = object;
 
-type TokenDetailsCardProps<P extends TitleInfoLessProps> = P & {
-    InstructionCardComponent?: ComponentType<any>;
-    tx: ParsedTransaction;
+type TokenDetailsCardProps = {
+    node: InstructionNode;
+    parsed: unknown;
 };
 
-export function TokenDetailsCard<P extends TitleInfoLessProps>(props: TokenDetailsCardProps<P>) {
-    const parsedData = 'parsed' in props.ix ? props.ix.parsed : {};
-    const parsed = create(parsedData, ParsedInfo);
-    const { type: rawType, info } = parsed;
+export function TokenDetailsCard({ node, parsed }: TokenDetailsCardProps) {
+    const { type: rawType, info } = create(parsed, ParsedInfo);
     const type = create(rawType, TokenInstructionType);
-    const title = `${TOKEN_IDS[props.ix.programId.toString()]}: ${IX_TITLES[type]}`;
-    const created = create(info, IX_STRUCTS[type] as any);
-    return <TokenInstruction title={title} info={created} {...props} />;
+    const title = `${TOKEN_IDS[node.programId.toString()]}: ${IX_TITLES[type]}`;
+    const struct = IX_STRUCTS[type] as Struct<TokenInfo, Record<string, Struct<unknown>>>;
+
+    return (
+        <TokenInstructionCard
+            node={node}
+            title={title}
+            info={create(info, struct)}
+            stringFields={declaredStringFields(struct)}
+        />
+    );
 }
 
-type InfoProps = {
-    childIndex?: number;
-    index: number;
-    info: any;
-    innerCards?: JSX.Element[];
-    InstructionCardComponent?: ComponentType<any>;
-    ix: TransactionInstruction | ParsedInstruction;
-    result: SignatureResult;
-    title: string;
-};
-
-async function fetchTokenInfo([_, address, cluster, url]: ['get-token-info', string, Cluster, string]) {
-    return await getTokenInfo(new PublicKey(address), cluster, url);
-}
-
-function TokenInstruction({
-    childIndex,
-    index,
-    innerCards,
-    InstructionCardComponent = InstructionCard,
-    ix,
-    result,
+function TokenInstructionCard({
+    node,
     title,
-    ...props
-}: InfoProps) {
-    const { mintAddress: infoMintAddress, tokenAddress } = React.useMemo(() => {
-        let mintAddress: string | undefined;
-        let tokenAddress: string | undefined;
-
-        // No sense fetching accounts if we don't need to convert an amount
-        if (!('amount' in props.info)) return {};
-
-        if ('mint' in props.info && props.info.mint instanceof PublicKey) {
-            mintAddress = props.info.mint.toBase58();
-        } else if ('account' in props.info && props.info.account instanceof PublicKey) {
-            tokenAddress = props.info.account.toBase58();
-        } else if ('source' in props.info && props.info.source instanceof PublicKey) {
-            tokenAddress = props.info.source.toBase58();
-        }
-        return {
-            mintAddress,
-            tokenAddress,
-        };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    info,
+    stringFields,
+}: {
+    node: InstructionNode;
+    title: string;
+    info: TokenInfo;
+    stringFields: ReadonlySet<string>;
+}) {
+    const { mintAddress: infoMintAddress, tokenAddress } = amountAccount(info);
     const tokenInfo = useTokenAccountInfo(tokenAddress);
 
     const mintAddress = infoMintAddress || tokenInfo?.mint.toBase58();
@@ -106,101 +83,147 @@ function TokenInstruction({
         mintAddress ? getTokenInfoSwrKey(mintAddress, cluster, url) : null,
         fetchTokenInfo,
     );
-    const attributes: JSX.Element[] = [];
-    let decimals = mintInfo?.decimals;
-    let tokenSymbol = '';
+    const decimals =
+        'tokenAmount' in info && is(info.tokenAmount, TokenAmountUi) ? info.tokenAmount.decimals : mintInfo?.decimals;
+    const tokenSymbol = mintAddress && tokenDetails ? tokenDetails.symbol : '';
+    const token = mintAddress !== undefined && address('Token', new PublicKey(mintAddress), { tokenLabel: true });
 
-    if ('tokenAmount' in props.info) {
-        decimals = props.info.tokenAmount.decimals;
-    }
-
-    if (mintAddress) {
-        if (tokenDetails) {
-            tokenSymbol = tokenDetails.symbol;
-        }
-
-        attributes.push(
-            <BaseTable.Row key={mintAddress}>
-                <BaseTable.Cell>Token</BaseTable.Cell>
-                <BaseTable.Cell className="text-right">
-                    <Address pubkey={new PublicKey(mintAddress)} alignRight link fetchTokenLabelInfo />
-                </BaseTable.Cell>
-            </BaseTable.Row>,
-        );
-    }
-
-    for (let key in props.info) {
-        let value = props.info[key];
-        if (value === undefined) continue;
-
-        // Flatten lists of public keys
-        if (Array.isArray(value) && value.every(v => v instanceof PublicKey)) {
-            for (let i = 0; i < value.length; i++) {
-                const publicKey = value[i];
-                const label = `${key.charAt(0).toUpperCase() + key.slice(1)} - #${i + 1}`;
-
-                attributes.push(
-                    <BaseTable.Row key={key + i}>
-                        <BaseTable.Cell>{label}</BaseTable.Cell>
-                        <BaseTable.Cell className="text-right">
-                            <Address pubkey={publicKey} alignRight link />
-                        </BaseTable.Cell>
-                    </BaseTable.Row>,
-                );
-            }
-            continue;
-        }
-
-        if (key === 'tokenAmount') {
-            key = 'amount';
-            value = (value as TokenAmountUi).amount;
-        }
-
-        let tag;
-        let labelSuffix = '';
-        if (value instanceof PublicKey) {
-            tag = <Address pubkey={value} alignRight link />;
-        } else if (key === 'amount') {
-            let amount;
-            if (decimals === undefined) {
-                labelSuffix = ' (raw)';
-                amount = new Intl.NumberFormat('en-US').format(value);
-            } else {
-                amount = new Intl.NumberFormat('en-US', {
-                    maximumFractionDigits: decimals,
-                    minimumFractionDigits: decimals,
-                }).format(normalizeTokenAmount(value, decimals));
-            }
-            tag = (
-                <>
-                    {amount} {tokenSymbol}
-                </>
+    // The RPC lists no accounts of an instruction it parses, so only a raw instruction has account rows.
+    if (hasRaw(node)) {
+        const split = splitAccounts(node.raw.keys, infoRows({ format: { kind: 'raw' }, info, stringFields }));
+        if (split) {
+            return (
+                <DecodedInstructionCard
+                    node={node}
+                    title={title}
+                    accountNames={split.accountNames}
+                    args={split.args}
+                    fields={[token]}
+                />
             );
-        } else {
-            tag = <>{value}</>;
         }
-
-        const label = key.charAt(0).toUpperCase() + key.slice(1) + labelSuffix;
-
-        attributes.push(
-            <BaseTable.Row key={key}>
-                <BaseTable.Cell>{label}</BaseTable.Cell>
-                <BaseTable.Cell className="text-right">{tag}</BaseTable.Cell>
-            </BaseTable.Row>,
-        );
     }
-
+    const rows = infoRows({ format: { decimals, kind: 'ui', tokenSymbol }, info, stringFields });
     return (
-        <InstructionCardComponent
-            ix={ix}
-            index={index}
-            result={result}
-            title={title}
-            innerCards={innerCards}
-            childIndex={childIndex}
-            {...props} // card may receive additional props
-        >
-            {attributes}
-        </InstructionCardComponent>
+        <InstructionCardView node={node} title={title}>
+            <InstructionFields
+                programId={node.programId}
+                fields={[token, ...rows.map(({ name, value }) => ({ ...value, label: capitalizeFirstLetter(name) }))]}
+            />
+        </InstructionCardView>
     );
+}
+
+/** A numeric field also holds a string, so only the declared type marks a field as text. */
+function declaredStringFields(struct: Struct<TokenInfo, Record<string, Struct<unknown>>>): ReadonlySet<string> {
+    return new Set(Object.keys(struct.schema).filter(key => struct.schema[key].type === 'string'));
+}
+
+async function fetchTokenInfo([_, address, cluster, url]: ['get-token-info', string, Cluster, string]) {
+    return await fetchTokenInfoFromApi(new PublicKey(address), cluster, url);
+}
+
+/** An instruction without `amount` needs no mint, so it looks up no account. */
+function amountAccount(info: TokenInfo): { mintAddress?: string; tokenAddress?: string } {
+    if (!('amount' in info)) return {};
+    if ('mint' in info && info.mint instanceof PublicKey) return { mintAddress: info.mint.toBase58() };
+    if ('account' in info && info.account instanceof PublicKey) return { tokenAddress: info.account.toBase58() };
+    if ('source' in info && info.source instanceof PublicKey) return { tokenAddress: info.source.toBase58() };
+    return {};
+}
+
+function hasRaw(node: InstructionNode): node is RawInstructionNode {
+    return node.raw !== undefined;
+}
+
+/**
+ * Names each account of the raw instruction after the row that holds its address. The other rows are arguments.
+ * Returns `undefined` when two rows hold one address, because the rows do not follow the account order.
+ */
+function splitAccounts(
+    keys: readonly AccountMeta[],
+    rows: readonly InfoRow[],
+): { accountNames: string[]; args: InfoRow[] } | undefined {
+    const addresses = rows.flatMap(({ value }) => (value.kind === 'address' ? [value.address] : []));
+    if (new Set(addresses).size < addresses.length) return undefined;
+
+    const args = [...rows];
+    const accountNames = keys.map(({ pubkey }) => {
+        const index = args.findIndex(({ value }) => value.kind === 'address' && value.address === pubkey.toBase58());
+        return index === -1 ? '' : args.splice(index, 1)[0].name;
+    });
+    return { accountNames, args };
+}
+
+type InfoRow = Extract<InstructionArg, { kind: 'leaf' }>;
+
+type AmountFormat = { kind: 'raw' } | { kind: 'ui'; decimals: number | undefined; tokenSymbol: string };
+
+function infoRows({
+    info,
+    format,
+    stringFields,
+}: {
+    info: TokenInfo;
+    format: AmountFormat;
+    stringFields: ReadonlySet<string>;
+}): InfoRow[] {
+    return Object.entries(info).flatMap(([key, value]): InfoRow[] => {
+        if (value === undefined) return [];
+        if (value === null) return [infoRow(key, value, { kind: 'text', value: '(none)' })];
+        if (isPublicKeyList(value)) return value.map((pubkey, i) => addressRow(`${key} - #${i + 1}`, pubkey));
+        if (key === 'tokenAmount' && is(value, TokenAmountUi)) return tokenAmountRows(value, format);
+        if (value instanceof PublicKey) return [addressRow(key, value)];
+        if (key === 'amount' && isNumeric(value)) return [amountRow(value, format)];
+        if (stringFields.has(key) && typeof value === 'string') return [infoRow(key, value, { kind: 'string', value })];
+        if (isNumeric(value)) return [infoRow(key, value, { kind: 'text', value })];
+        if (typeof value === 'boolean') return [infoRow(key, value, { kind: 'text', value: String(value) })];
+        if (Array.isArray(value) && value.every(isNumeric)) {
+            return [infoRow(key, value, { kind: 'preformatted', value })];
+        }
+        throw new Error(`Token instruction field ${key} of type ${typeof value} has no row format`);
+    });
+}
+
+function infoRow(name: string, parsed: unknown, value: FieldValue): InfoRow {
+    return { kind: 'leaf', name, type: argType(parsed), value };
+}
+
+function addressRow(name: string, pubkey: PublicKey): InfoRow {
+    const address = toKitAddress(pubkey);
+    return infoRow(name, address, { address, kind: 'address' });
+}
+
+// The parser joins the `amount` and `decimals` arguments in `tokenAmount`.
+function tokenAmountRows({ amount, decimals }: TokenAmountUi, format: AmountFormat): InfoRow[] {
+    if (format.kind === 'ui') return [amountRow(amount, format)];
+    return [amountRow(amount, format), infoRow('decimals', decimals, { kind: 'text', value: decimals })];
+}
+
+function amountRow(value: string | number, format: AmountFormat): InfoRow {
+    const raw = value as number | Intl.StringNumericLiteral;
+    if (format.kind === 'raw') {
+        return infoRow('amount', value, { kind: 'text', value: new Intl.NumberFormat('en-US').format(raw) });
+    }
+    const { decimals, tokenSymbol } = format;
+    const amount =
+        decimals === undefined
+            ? new Intl.NumberFormat('en-US').format(raw)
+            : new Intl.NumberFormat('en-US', {
+                  maximumFractionDigits: decimals,
+                  minimumFractionDigits: decimals,
+              }).format(normalizeTokenAmount(value, decimals));
+
+    return infoRow(decimals === undefined ? 'amount (raw)' : 'amount', value, {
+        kind: 'text',
+        value: tokenSymbol ? `${amount} ${tokenSymbol}` : amount,
+    });
+}
+
+function isPublicKeyList(value: unknown): value is PublicKey[] {
+    return Array.isArray(value) && value.every(item => item instanceof PublicKey);
+}
+
+function isNumeric(value: unknown): value is string | number {
+    return typeof value === 'string' || typeof value === 'number';
 }
