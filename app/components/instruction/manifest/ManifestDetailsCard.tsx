@@ -66,7 +66,7 @@ function ManifestLoggedCard({
         const programIds = transactionWithMeta.transaction.message.instructions.map(ix =>
             ix.programId.toBase58(),
         );
-        return extractEventsFromLogs(logMessages, node.index, programIds).map(payload => {
+        return extractEventsFromLogs(logMessages, node.index, programIds).map((payload): InstructionEvent => {
             const data = fromBase64(payload.data);
             const event = decodeManifestEvent(payload.data);
             return event
