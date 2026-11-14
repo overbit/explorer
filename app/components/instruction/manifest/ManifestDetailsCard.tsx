@@ -63,7 +63,9 @@ function ManifestLoggedCard({
         const logMessages = transactionWithMeta?.meta?.logMessages;
         if (!logMessages || !transactionWithMeta) return [];
 
-        const programIds = transactionWithMeta.transaction.message.instructions.map(ix => ix.programId.toBase58());
+        const programIds = transactionWithMeta.transaction.message.instructions.map(ix =>
+            ix.programId.toBase58(),
+        );
         return extractEventsFromLogs(logMessages, node.index, programIds).map(payload => {
             const data = fromBase64(payload.data);
             const event = decodeManifestEvent(payload.data);
@@ -112,7 +114,10 @@ function manifestArg(field: ManifestDecodedField): InstructionArg {
     } else if (typeof field.value === 'string') {
         value = { kind: 'string', value: field.value };
     } else {
-        value = { kind: 'text', value: Array.isArray(field.value) ? field.value.join(', ') : String(field.value) };
+        value = {
+            kind: 'text',
+            value: Array.isArray(field.value) ? field.value.join(', ') : String(field.value),
+        };
     }
 
     return { kind: 'leaf', name: field.label, type: field.type, value };
