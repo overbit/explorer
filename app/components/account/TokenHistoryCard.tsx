@@ -6,17 +6,13 @@ import { InstructionDetails } from '@components/common/InstructionDetails';
 import { LoadingCard } from '@components/common/LoadingCard';
 import { Signature } from '@components/common/Signature';
 import { Slot } from '@components/common/Slot';
-import {
-    isTokenLendingInstruction,
-    parseTokenLendingInstructionTitle,
-} from '@components/instruction/token-lending/types';
-import { isTokenSwapInstruction, parseTokenSwapInstructionTitle } from '@components/instruction/token-swap/types';
 import { RefreshButton } from '@components/shared/ui/refresh-button';
 import { cn } from '@components/shared/utils';
 import { useTokenInfo } from '@entities/token-info';
 import { trustedInnerInstructions } from '@entities/transaction-data';
-import { isMangoInstruction, parseMangoInstructionTitle } from '@explorer/decoder-mango/detection';
-import { isSerumInstruction, parseSerumInstructionTitle } from '@explorer/decoder-serum/detection';
+import { isMangoProgramId, parseMangoInstructionTitle } from '@explorer/decoder-mango/detection';
+import { isSerumProgramId, parseSerumInstructionTitle } from '@explorer/decoder-serum/detection';
+import { isTokenSwapProgramId, parseTokenSwapInstructionTitle } from '@explorer/decoder-token-swap/detection';
 import { useAccountHistories } from '@features/transaction-history/model/use-account-history';
 import { useFetchAccountHistory } from '@features/transaction-history/model/use-fetch-account-history';
 import { isTokenProgramData } from '@providers/accounts';
@@ -24,10 +20,11 @@ import { isTokenProgramId, TokenInfoWithPubkey, useAccountOwnedTokens } from '@p
 import { CacheEntry, FetchStatus } from '@providers/cache';
 import { useCluster } from '@providers/cluster';
 import { Details, useFetchTransactionDetails, useTransactionDetailsCache } from '@providers/transactions/parsed';
+import { getBase58Encoder } from '@solana/kit';
 import { ConfirmedSignatureInfo, ParsedInstruction, PartiallyDecodedInstruction, PublicKey } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
 import { getTokenProgramInstructionName, InstructionType } from '@utils/instruction';
-import { displayAddress, intoTransactionInstruction, TokenLabelInfo } from '@utils/tx';
+import { displayAddress, TokenLabelInfo } from '@utils/tx';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import React, { useCallback } from 'react';
@@ -235,6 +232,7 @@ function TokenHistoryTable({ tokens }: { tokens: TokenInfoWithPubkey[] }) {
                     analyticsSection="token_history_card"
                     onClick={() => fetchHistories(true)}
                     fetching={fetching}
+                    failed={failed}
                 />
             </CardHeader>
 
@@ -495,47 +493,36 @@ function InstructionDetailsCell({
                 });
             }
 
-            let transactionInstruction;
-            if (transactionWithMeta?.transaction) {
-                transactionInstruction = intoTransactionInstruction(transactionWithMeta.transaction, ix);
-            }
-
             if ('parsed' in ix) {
                 if (isTokenProgramData(ix)) {
-                    name = getTokenProgramInstructionName(ix, tx);
+                    return { innerInstructions, name: getTokenProgramInstructionName(ix, tx) };
                 } else {
                     return undefined;
                 }
-            } else if (transactionInstruction && isSerumInstruction(transactionInstruction)) {
+            }
+
+            const programId = ix.programId.toBase58();
+            if (isSerumProgramId(programId)) {
                 try {
-                    name = parseSerumInstructionTitle(transactionInstruction);
+                    name = parseSerumInstructionTitle(programId, getBase58Encoder().encode(ix.data));
                 } catch (error) {
                     Logger.error(error, {
                         signature: tx.signature,
                     });
                     return undefined;
                 }
-            } else if (transactionInstruction && isTokenSwapInstruction(transactionInstruction)) {
+            } else if (isTokenSwapProgramId(programId)) {
                 try {
-                    name = parseTokenSwapInstructionTitle(transactionInstruction);
+                    name = parseTokenSwapInstructionTitle(programId, getBase58Encoder().encode(ix.data));
                 } catch (error) {
                     Logger.error(error, {
                         signature: tx.signature,
                     });
                     return undefined;
                 }
-            } else if (transactionInstruction && isTokenLendingInstruction(transactionInstruction)) {
+            } else if (isMangoProgramId(programId)) {
                 try {
-                    name = parseTokenLendingInstructionTitle(transactionInstruction);
-                } catch (error) {
-                    Logger.error(error, {
-                        signature: tx.signature,
-                    });
-                    return undefined;
-                }
-            } else if (transactionInstruction && isMangoInstruction(transactionInstruction)) {
-                try {
-                    name = parseMangoInstructionTitle(transactionInstruction);
+                    name = parseMangoInstructionTitle(programId, getBase58Encoder().encode(ix.data));
                 } catch (error) {
                     Logger.error(error, {
                         signature: tx.signature,

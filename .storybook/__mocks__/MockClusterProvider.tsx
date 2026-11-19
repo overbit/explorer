@@ -8,7 +8,7 @@ import { useHydrateAtoms } from 'jotai/utils';
 import { type ReactNode, useState } from 'react';
 import { SWRConfig, unstable_serialize } from 'swr';
 
-const defaultSelection = clusterSelection(Cluster.MainnetBeta);
+const defaultSelection = clusterSelection(Cluster.Mainnet);
 
 const defaultState: ClusterState = {
     connectableUrl: toConnectableUrl(clusterUrl(defaultSelection)),
@@ -17,14 +17,16 @@ const defaultState: ClusterState = {
     status: ClusterStatus.Connected,
 };
 
+export const defaultEpochInfo: ClusterInfo['epochInfo'] = {
+    absoluteSlot: 312_456_789n,
+    blockHeight: 295_456_321n,
+    epoch: 520n,
+    slotIndex: 156_789n,
+    slotsInEpoch: 432_000n,
+};
+
 const defaultClusterInfo: ClusterInfo = {
-    epochInfo: {
-        absoluteSlot: 312_456_789n,
-        blockHeight: 295_456_321n,
-        epoch: 520n,
-        slotIndex: 156_789n,
-        slotsInEpoch: 432_000n,
-    },
+    epochInfo: defaultEpochInfo,
     epochSchedule: {
         firstNormalEpoch: 14n,
         firstNormalSlot: 524_256n,

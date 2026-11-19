@@ -1,17 +1,16 @@
+// @vitest-environment jsdom
+
 import { ComputeBudgetProgram, PublicKey, type VersionedMessage } from '@solana/web3.js';
 import { renderHook } from '@testing-library/react';
 import { Cluster } from '@utils/cluster';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { useProgramIdlNames, warn, error } = vi.hoisted(() => ({
-    error: vi.fn(),
-    useProgramIdlNames: vi.fn(),
-    warn: vi.fn(),
-}));
+import { Logger } from '@/app/shared/lib/logger';
+
+const { useProgramIdlNames } = vi.hoisted(() => ({ useProgramIdlNames: vi.fn() }));
 // The `@x` path: `useResolvedInstructionNames` reaches the fetch through the cross-entity API.
 vi.mock('@entities/idl/@x/transaction-data', () => ({ useProgramIdlNames }));
-vi.mock('@/app/shared/lib/logger', () => ({ Logger: { error, warn } }));
-vi.mock('@providers/cluster', () => ({ useCluster: () => ({ cluster: Cluster.MainnetBeta, url: MAINNET_URL }) }));
+vi.mock('@providers/cluster', () => ({ useCluster: () => ({ cluster: Cluster.Mainnet, url: MAINNET_URL }) }));
 
 import { useSimulationInstructionNames } from '../use-simulation-instruction-names';
 
@@ -133,8 +132,8 @@ describe('useSimulationInstructionNames', () => {
                 instructions: [{ data: TRANSFER_CHECKED, programIdIndex: 7 }],
             });
 
-            expect(error).toHaveBeenCalledTimes(1);
-            expect(error).toHaveBeenCalledWith(
+            expect(vi.mocked(Logger.error)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(Logger.error)).toHaveBeenCalledWith(
                 expect.any(Error),
                 expect.objectContaining({
                     sentry: true,
@@ -183,7 +182,7 @@ describe('useSimulationInstructionNames', () => {
 
             expect(useProgramIdlNames).toHaveBeenCalledWith(
                 [ComputeBudgetProgram.programId.toBase58(), JUPITER_PROGRAM.toBase58(), TOKEN_PROGRAM.toBase58()],
-                Cluster.MainnetBeta,
+                Cluster.Mainnet,
                 MAINNET_URL,
             );
         });

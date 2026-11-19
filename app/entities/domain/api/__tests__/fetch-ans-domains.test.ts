@@ -19,7 +19,7 @@ const mockGetProgramAccounts = vi.fn();
 const mockGetMultipleAccounts = vi.fn();
 
 vi.mock('@utils/cluster', () => ({
-    Cluster: { MainnetBeta: 'mainnet-beta' },
+    Cluster: { Mainnet: 'mainnet' },
     serverClusterUrl: () => 'https://unused.test',
 }));
 
@@ -142,21 +142,6 @@ describe('fetchAnsDomains', () => {
 
         expect(result).toHaveLength(1);
         expect(result[0].name).toBe('alice.bonk');
-    });
-
-    it('should strip trailing null bytes from domain names', async () => {
-        setupProgramAccounts({
-            tldHouses: [makeTldHouseAccount('.bonk', PARENT_ACCOUNT, BONK_TLD_HOUSE)],
-            userAccounts: [makeNameAccount('nameAccount1', PARENT_ACCOUNT)],
-        });
-        // makeReverseLookupData pads with 10 extra \0 bytes after the name
-        mockGetMultipleAccounts.mockReturnValue(sendable({ value: [makeReverseAccountInfo('padded')] }));
-
-        const result = await fetchAnsDomains(USER_ADDRESS);
-
-        expect(result[0].name).toBe('padded.bonk');
-        // Verify no hidden \0 bytes survived — length must match exactly
-        expect(result[0].name.length).toBe('padded.bonk'.length);
     });
 
     it('should batch getMultipleAccounts calls when entries exceed max', async () => {

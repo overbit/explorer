@@ -17,17 +17,9 @@ vi.mock('@solana/security-txt', () => ({
     fetchSecurityTxt: mocks.fetchSecurityTxt,
 }));
 
-vi.mock('@solana/kit', async () => {
-    const actual = await vi.importActual<typeof import('@solana/kit')>('@solana/kit');
-    // The fetchers are mocked and ignore the rpc handle, so a stub is enough.
-    return { ...actual, createSolanaRpc: vi.fn(() => ({})) };
-});
-
 describe('GET /api/security-txt', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.spyOn(Logger, 'panic').mockImplementation(() => {});
-        vi.spyOn(Logger, 'warn').mockImplementation(() => {});
     });
 
     it('should return 400 when required params are missing', async () => {
@@ -46,7 +38,7 @@ describe('GET /api/security-txt', () => {
 
     it('should return 400 for an invalid program address', async () => {
         const { GET } = await importRoute();
-        const res = await GET(createRequest('not-a-pubkey', Cluster.MainnetBeta));
+        const res = await GET(createRequest('not-a-pubkey', Cluster.Mainnet));
         expect(res.status).toBe(400);
         expect(await res.json()).toEqual({ error: 'Invalid program address' });
     });
@@ -67,7 +59,7 @@ describe('GET /api/security-txt', () => {
         });
 
         const { GET } = await importRoute();
-        const res = await GET(createRequest(mockAddress, Cluster.MainnetBeta));
+        const res = await GET(createRequest(mockAddress, Cluster.Mainnet));
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({
             securityTxt: { fields: { contacts: 'mailto:security@example.com' }, type: 'pmp' },
@@ -79,7 +71,7 @@ describe('GET /api/security-txt', () => {
         mocks.fetchSecurityTxt.mockResolvedValueOnce(null);
 
         const { GET } = await importRoute();
-        const res = await GET(createRequest(mockAddress, Cluster.MainnetBeta));
+        const res = await GET(createRequest(mockAddress, Cluster.Mainnet));
         expect(res.status).toBe(200);
         expect((await res.json()).securityTxt).toBeUndefined();
     });
@@ -88,7 +80,7 @@ describe('GET /api/security-txt', () => {
         mocks.fetchSecurityTxt.mockResolvedValueOnce(null);
 
         const { GET } = await importRoute();
-        await GET(createRequest(mockAddress, Cluster.MainnetBeta));
+        await GET(createRequest(mockAddress, Cluster.Mainnet));
 
         // authority: null → canonical authority only, no fndn fallback lookups.
         expect(mocks.fetchSecurityTxt).toHaveBeenCalledWith(expect.anything(), mockAddress, { authority: null });
@@ -100,7 +92,7 @@ describe('GET /api/security-txt', () => {
         );
 
         const { GET } = await importRoute();
-        const res = await GET(createRequest(mockAddress, Cluster.MainnetBeta));
+        const res = await GET(createRequest(mockAddress, Cluster.Mainnet));
         expect(res.status).toBe(502);
         expect(await res.json()).toEqual({ error: 'Upstream RPC error' });
         expect(Logger.warn).toHaveBeenCalled();
@@ -111,7 +103,7 @@ describe('GET /api/security-txt', () => {
         mocks.fetchSecurityTxt.mockRejectedValueOnce(new Error('RPC connection failed'));
 
         const { GET } = await importRoute();
-        const res = await GET(createRequest(mockAddress, Cluster.MainnetBeta));
+        const res = await GET(createRequest(mockAddress, Cluster.Mainnet));
         expect(res.status).toBe(502);
         expect(await res.json()).toEqual({ error: 'Metadata fetch failed' });
         expect(Logger.panic).toHaveBeenCalled();

@@ -1,7 +1,8 @@
 'use client';
 
 import { AccountHeader } from '@components/common/Account';
-import { useRefreshAccount } from '@entities/account';
+import { useAccountFetching, useRefreshAccount } from '@entities/account';
+import { fetchTokenInfoFromApi, getTokenInfoSwrKey } from '@entities/token-info';
 import { useCluster } from '@providers/cluster';
 import { PublicKey } from '@solana/web3.js';
 import { Cluster } from '@utils/cluster';
@@ -10,7 +11,6 @@ import useSWR from 'swr';
 
 import { Card, CardBody } from '@/app/shared/ui/Card';
 import { populatePartialParsedTokenExtension } from '@/app/utils/token-extension';
-import { getTokenInfo, getTokenInfoSwrKey } from '@/app/utils/token-info';
 import { TokenExtension } from '@/app/validators/accounts/token-extension';
 
 import { LoadingCard } from '../common/LoadingCard';
@@ -18,7 +18,7 @@ import { TokenExtensionsSection } from './TokenExtensionsSection';
 import { ParsedTokenExtension } from './types';
 
 async function fetchTokenInfo([_, address, cluster, url]: ['get-token-info', string, Cluster, string]) {
-    return await getTokenInfo(new PublicKey(address), cluster, url);
+    return await fetchTokenInfoFromApi(new PublicKey(address), cluster, url);
 }
 
 export function TokenExtensionsCard({
@@ -32,6 +32,7 @@ export function TokenExtensionsCard({
 }) {
     const { cluster, url } = useCluster();
     const refresh = useRefreshAccount();
+    const fetching = useAccountFetching(address);
     const swrKey = useMemo(() => getTokenInfoSwrKey(address, cluster, url), [address, cluster, url]);
     const { data: tokenInfo, isLoading } = useSWR(swrKey, fetchTokenInfo);
 
@@ -53,6 +54,7 @@ export function TokenExtensionsCard({
                 title="Extensions"
                 analyticsSection="extensions_section"
                 refresh={() => refresh(new PublicKey(address), 'parsed')}
+                fetching={fetching}
             />
             <CardBody ui="dashkit" className="overflow-x-scroll !p-0">
                 <TokenExtensionsSection

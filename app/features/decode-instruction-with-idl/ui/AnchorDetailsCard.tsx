@@ -1,62 +1,49 @@
 import { Idl, Program } from '@coral-xyz/anchor';
-import { SignatureResult, TransactionInstruction } from '@solana/web3.js';
+import {
+    DecodedInstructionCard,
+    InstructionCardView,
+    InstructionFieldRows,
+    ProgramField,
+    type RawInstructionNode,
+    text,
+} from '@entities/instruction-card';
+import { anchorInstructionArgs } from '@utils/anchor';
 
-import { InstructionCard } from '@/app/components/instruction/InstructionCard';
-import { ProgramEventsCard } from '@/app/components/instruction/ProgramEventsCard';
-
+import { anchorAccountNames } from '../lib/anchor-account-names';
 import { type AnchorInstructionDecoded } from '../lib/decode-anchor-instruction';
-import { useAnchorEventPayloads } from '../model/use-anchor-event-payloads';
-import { AnchorInstructionBody } from './AnchorInstructionBody';
+import { useAnchorEvents } from '../model/use-anchor-events';
 
-/**
- * Presentational card for an Anchor instruction already decoded by `decodeInstructionWithIdl` (the
- * `kind: 'anchor'` fallback). It renders the title + rich body from `decoded` and attaches event cards;
- * it performs no decoding itself. `program` is kept only for its `idl` (argument rows) and for event
- * decoding from the transaction logs.
- */
 export function AnchorDetailsCard({
-    ix,
-    index,
-    result,
-    signature,
-    innerCards,
-    childIndex,
+    node,
     program,
     decoded,
 }: {
-    ix: TransactionInstruction;
-    index: number;
-    result: SignatureResult;
-    signature: string;
-    innerCards?: JSX.Element[];
-    childIndex?: number;
+    node: RawInstructionNode;
     program: Program<Idl>;
     decoded: AnchorInstructionDecoded;
 }) {
-    // Events live in the transaction logs (tx page only); the inspector passes an empty signature → none.
-    const eventPayloads = useAnchorEventPayloads({ index, signature });
-    const eventCards = eventPayloads && [
-        <ProgramEventsCard key="events" eventPayloads={eventPayloads} program={program} instructionIndex={index} />,
-    ];
+    const events = useAnchorEvents(node, program);
+    const { decodedIxData, ixAccounts, ixDef } = decoded;
+
+    if (!ixAccounts || !decodedIxData || !ixDef) {
+        return (
+            <InstructionCardView node={node} title={decoded.cardTitle} events={events}>
+                <ProgramField programId={node.programId} name={decoded.programName} />
+                <InstructionFieldRows
+                    fields={[text('Error', 'Failed to decode account data according to the public Anchor interface')]}
+                />
+            </InstructionCardView>
+        );
+    }
 
     return (
-        <InstructionCard
+        <DecodedInstructionCard
+            node={node}
             title={decoded.cardTitle}
-            ix={ix}
-            index={index}
-            result={result}
-            innerCards={innerCards}
-            childIndex={childIndex}
-            eventCards={eventCards}
-        >
-            <AnchorInstructionBody
-                ix={ix}
-                idl={program.idl}
-                programName={decoded.programName}
-                ixAccounts={decoded.ixAccounts}
-                decodedIxData={decoded.decodedIxData}
-                ixDef={decoded.ixDef}
-            />
-        </InstructionCard>
+            programName={decoded.programName}
+            accountNames={anchorAccountNames(ixAccounts)}
+            args={anchorInstructionArgs(decodedIxData.data, ixDef, program.idl)}
+            events={events}
+        />
     );
 }

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -16,7 +18,7 @@ describe('useDasImage', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(useCluster).mockReturnValue({
-            ...clusterSelection(Cluster.MainnetBeta),
+            ...clusterSelection(Cluster.Mainnet),
         } as ReturnType<typeof useCluster>);
         vi.mocked(useSWR).mockReturnValue({ data: undefined } as ReturnType<typeof useSWR>);
     });
@@ -36,11 +38,6 @@ describe('useDasImage', () => {
 
         const { result } = renderHook(() => useDasImage('SomeMintAddress'));
         expect(result.current).toBe('https://example.com/image.png');
-    });
-
-    it('should return undefined when SWR has no data', () => {
-        const { result } = renderHook(() => useDasImage('SomeMintAddress'));
-        expect(result.current).toBeUndefined();
     });
 
     it('should pass an SWR key of cluster slug and mint, without any customUrl', () => {

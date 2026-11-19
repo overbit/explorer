@@ -1,7 +1,9 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { Cluster } from '@utils/cluster';
 import useSWR from 'swr';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { waitForHook } from '@/app/__tests__/swr-hook';
 
 import { useTokenInfo } from '../use-token-info';
 
@@ -16,15 +18,6 @@ vi.mock('swr', () => ({
     default: vi.fn(() => ({ data: undefined })),
 }));
 
-vi.mock('@utils/token-info', () => ({
-    getTokenInfoSwrKey: (address: string, cluster: Cluster, genesisHash?: string) => [
-        'get-token-info',
-        address,
-        cluster,
-        genesisHash,
-    ],
-}));
-
 describe('useTokenInfo', () => {
     beforeEach(() => {
         mockRequestTokenInfo.mockClear();
@@ -36,25 +29,25 @@ describe('useTokenInfo', () => {
         ['undefined', undefined, ADDR],
         ['true with empty pubkey', true, ''],
     ])('should not request token info when fetchTokenLabelInfo is %s', async (_label, fetch, pubkey) => {
-        renderHook(() => useTokenInfo(fetch, pubkey, Cluster.MainnetBeta));
-        await waitFor(() => expect(mockRequestTokenInfo).not.toHaveBeenCalled());
+        renderHook(() => useTokenInfo(fetch, pubkey, Cluster.Mainnet));
+        await waitForHook(() => expect(mockRequestTokenInfo).not.toHaveBeenCalled());
     });
 
     it('should request token info with correct args including genesisHash', async () => {
-        renderHook(() => useTokenInfo(true, ADDR, Cluster.MainnetBeta, 'abc123'));
+        renderHook(() => useTokenInfo(true, ADDR, Cluster.Mainnet, 'abc123'));
 
-        await waitFor(() => {
-            expect(mockRequestTokenInfo).toHaveBeenCalledWith(ADDR, Cluster.MainnetBeta, 'abc123');
+        await waitForHook(() => {
+            expect(mockRequestTokenInfo).toHaveBeenCalledWith(ADDR, Cluster.Mainnet, 'abc123');
         });
     });
 
     it('should pass SWR key when enabled, null when disabled', () => {
-        renderHook(() => useTokenInfo(true, ADDR, Cluster.MainnetBeta));
-        expect(useSWR).toHaveBeenCalledWith(['get-token-info', ADDR, Cluster.MainnetBeta, undefined], null);
+        renderHook(() => useTokenInfo(true, ADDR, Cluster.Mainnet));
+        expect(useSWR).toHaveBeenCalledWith(['get-token-info', ADDR, Cluster.Mainnet, undefined], null);
 
         vi.mocked(useSWR).mockClear();
 
-        renderHook(() => useTokenInfo(false, ADDR, Cluster.MainnetBeta));
+        renderHook(() => useTokenInfo(false, ADDR, Cluster.Mainnet));
         expect(useSWR).toHaveBeenCalledWith(null, null);
     });
 
@@ -62,24 +55,24 @@ describe('useTokenInfo', () => {
         const mockToken = { address: ADDR, name: 'Wrapped SOL', symbol: 'SOL' };
         vi.mocked(useSWR).mockReturnValue({ data: mockToken } as ReturnType<typeof useSWR>);
 
-        const { result } = renderHook(() => useTokenInfo(true, ADDR, Cluster.MainnetBeta));
+        const { result } = renderHook(() => useTokenInfo(true, ADDR, Cluster.Mainnet));
         expect(result.current).toEqual(mockToken);
     });
 
     it('should re-request when pubkey or cluster changes', async () => {
         const { rerender } = renderHook(({ pubkey, cluster }) => useTokenInfo(true, pubkey, cluster), {
-            initialProps: { cluster: Cluster.MainnetBeta, pubkey: 'address1' },
+            initialProps: { cluster: Cluster.Mainnet, pubkey: 'address1' },
         });
 
-        await waitFor(() => {
-            expect(mockRequestTokenInfo).toHaveBeenCalledWith('address1', Cluster.MainnetBeta, undefined);
+        await waitForHook(() => {
+            expect(mockRequestTokenInfo).toHaveBeenCalledWith('address1', Cluster.Mainnet, undefined);
         });
 
-        rerender({ cluster: Cluster.MainnetBeta, pubkey: 'address2' });
-        await waitFor(() => expect(mockRequestTokenInfo).toHaveBeenCalledTimes(2));
+        rerender({ cluster: Cluster.Mainnet, pubkey: 'address2' });
+        await waitForHook(() => expect(mockRequestTokenInfo).toHaveBeenCalledTimes(2));
 
         rerender({ cluster: Cluster.Devnet, pubkey: 'address2' });
-        await waitFor(() => expect(mockRequestTokenInfo).toHaveBeenCalledTimes(3));
+        await waitForHook(() => expect(mockRequestTokenInfo).toHaveBeenCalledTimes(3));
         expect(mockRequestTokenInfo).toHaveBeenLastCalledWith('address2', Cluster.Devnet, undefined);
     });
 });

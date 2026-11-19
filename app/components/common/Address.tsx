@@ -36,7 +36,13 @@ type Props = {
     link?: boolean;
     raw?: boolean;
     noTruncate?: boolean;
-    overrideText?: string;
+    /**
+     * Wraps the text instead of truncating it, because a table cell grows to fit its content and never truncates.
+     * A raw address still mid-truncates.
+     */
+    wrapLabel?: boolean;
+    /** Shows in place of an address that has no explorer label. */
+    fallbackText?: string;
     tokenLabelInfo?: TokenLabelInfo;
     fetchTokenLabelInfo?: boolean;
     'aria-label'?: string;
@@ -51,7 +57,8 @@ export function Address({
     link,
     raw,
     noTruncate,
-    overrideText,
+    wrapLabel,
+    fallbackText,
     tokenLabelInfo,
     className,
     fetchTokenLabelInfo,
@@ -77,15 +84,15 @@ export function Address({
         addressLabel = displayAddress(address, cluster, tokenInfo);
     }
 
-    if (overrideText) {
-        addressLabel = overrideText;
+    if (fallbackText && addressLabel === address) {
+        addressLabel = fallbackText;
     }
 
     const displayText = nickname ? `"${nickname}" (${addressLabel})` : addressLabel;
 
     // Mid-truncation applies to raw 44-char addresses. When a nickname is shown the address
     // line always truncates regardless of the noTruncate prop (the nickname makes it necessary).
-    const isMidTruncateCandidate = (!noTruncate || !!nickname) && !overrideText && addressLabel === address;
+    const isMidTruncateCandidate = (!noTruncate || !!nickname) && addressLabel === address;
 
     const editBtnRef = useRef<HTMLButtonElement>(null);
     const { rowRef, hiddenTextRef, isMidTruncated, midTruncatedText } = useMidTruncation(
@@ -112,7 +119,13 @@ export function Address({
 
     const visibleText = isMidTruncated ? midTruncatedText : displayText;
 
-    const innerTextClassName = cn('font-mono', !nickname && !noTruncate && 'truncate', nickname && 'block min-w-0');
+    const wraps = wrapLabel && !nickname;
+    const innerTextClassName = cn(
+        'font-mono',
+        !nickname && !noTruncate && !wraps && 'truncate',
+        wraps && 'whitespace-normal [overflow-wrap:anywhere]',
+        nickname && 'block min-w-0',
+    );
 
     // When a nickname is set, render it and the address label as two stacked lines
     // so neither overflows on narrow (mobile) viewports.

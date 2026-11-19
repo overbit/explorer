@@ -34,6 +34,7 @@ const sizeOptions = [
     'compact',
     'tile',
     'toolbar',
+    'inline',
 ] as const satisfies readonly ButtonSize[];
 
 // Dashkit migration shim — emits raw Bootstrap `.btn` + `.btn-<variant>` classes via `ui="dashkit"`.
@@ -194,6 +195,7 @@ export const VariantsBySize: Story = {
             compact: 'Compact',
             default: 'Default',
             icon: 'Icon',
+            inline: 'Inline',
             lg: 'Large',
             sm: 'Small',
             tile: 'Tile',
@@ -323,7 +325,7 @@ export const DashkitWithIcons: Story = {
 };
 
 // Mirrors the legacy `btn-group-toggle` pattern used for view-mode toggles in card headers
-// (e.g. ProgramLogSection / ProgramEventsCard "Raw"). `active` toggles the pressed state on `btn-black`.
+// (e.g. the ProgramLogSection "Raw"). `active` toggles the pressed state on `btn-black`.
 function DashkitToggleDemo() {
     const [showRaw, setShowRaw] = useState(false);
     return (

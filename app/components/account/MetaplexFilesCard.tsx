@@ -4,7 +4,7 @@ import { Account, isTokenProgramData } from '@providers/accounts';
 import React from 'react';
 
 import { ExternalLink } from '@/app/components/shared/ui/external-link';
-import { getProxiedUri } from '@/app/features/metadata/utils';
+import { getProxiedUri } from '@/app/shared/lib/metadata-proxy';
 import { useCluster } from '@/app/providers/cluster';
 import { useCompressedNft } from '@/app/providers/compressed-nft';
 import { Card, CardHeader, CardTitle } from '@/app/shared/ui/Card';

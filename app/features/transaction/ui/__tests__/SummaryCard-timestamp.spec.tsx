@@ -18,11 +18,7 @@ import { SummaryCard } from '../SummaryCard';
 const IN_FLIGHT = { status: FetchStatus.Fetching };
 const FIXTURE_BLOCK_TIME_UTC = 'May 18, 2024 at 02:40:00 UTC';
 
-vi.mock('next/navigation', () => ({
-    usePathname: () => `/tx/${DEFAULT_SIGNATURE}`,
-    useRouter: () => ({ replace: vi.fn() }),
-    useSearchParams: () => new URLSearchParams(),
-}));
+vi.mock('next/navigation', () => import('@/app/__tests__/next-navigation'));
 
 function renderSummary({
     parsed = MOCK_PARSED_TX,
@@ -45,31 +41,37 @@ describe('SummaryCard timestamp', () => {
     it('should render the block time from the raw transaction', async () => {
         renderSummary({ parsed: MOCK_PARSED_TX_NO_BLOCK_TIME });
 
-        expect(await findUtcTimestampRow()).toHaveTextContent(FIXTURE_BLOCK_TIME_UTC);
+        expect(await findTimestampRow()).toHaveTextContent(FIXTURE_BLOCK_TIME_UTC);
     });
 
     it('should use the parsed block time when the raw response has none', async () => {
         renderSummary({ raw: MOCK_RAW_TX_NO_BLOCK_TIME });
 
-        expect(await findUtcTimestampRow()).toHaveTextContent(FIXTURE_BLOCK_TIME_UTC);
+        expect(await findTimestampRow()).toHaveTextContent(FIXTURE_BLOCK_TIME_UTC);
     });
 
-    it('should omit the timestamp rows while both transaction fetches are in flight', async () => {
+    it('should render a single timestamp row', async () => {
+        renderSummary();
+
+        expect(await screen.findAllByText('Timestamp')).toHaveLength(1);
+    });
+
+    it('should omit the timestamp row while both transaction fetches are in flight', async () => {
         renderSummary({ parsed: IN_FLIGHT, raw: IN_FLIGHT });
 
         expect(await screen.findByText('Signature')).toBeInTheDocument();
-        expect(screen.queryByText('Timestamp (Local)')).not.toBeInTheDocument();
+        expect(screen.queryByText('Timestamp')).not.toBeInTheDocument();
         expect(screen.queryByText('Unavailable')).not.toBeInTheDocument();
     });
 
     it('should render Unavailable when neither transaction has a block time', async () => {
         renderSummary({ parsed: MOCK_PARSED_TX_NO_BLOCK_TIME, raw: MOCK_RAW_TX_NO_BLOCK_TIME });
 
-        expect(await screen.findByText('Unavailable')).toBeInTheDocument();
-        expect(screen.queryByText('Timestamp (Local)')).not.toBeInTheDocument();
+        expect(await findTimestampRow()).toHaveTextContent('Unavailable');
+        expect(screen.queryByText(FIXTURE_BLOCK_TIME_UTC)).not.toBeInTheDocument();
     });
 });
 
-async function findUtcTimestampRow() {
-    return (await screen.findByText('Timestamp (UTC)')).parentElement;
+async function findTimestampRow() {
+    return (await screen.findByText('Timestamp')).parentElement;
 }
