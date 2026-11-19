@@ -36,14 +36,14 @@ export function BrandLockup({ className }: { className?: string }) {
                     filter: 'invert(41%) sepia(100%) saturate(2000%) hue-rotate(35deg) brightness(150%)',
                 }}
             />
-            <span className="flex min-w-0 flex-col items-start">
-                <span className="block overflow-hidden" style={{ width: 112 }}>
-                    <Image alt="Solana" height={22} src={Logo} width={214} priority className="max-w-none" />
-                </span>
-                <span className="ml-[8px] mt-0.5 text-[9px] font-medium uppercase tracking-[0.12em] text-[#b4b4b4]">
-                    Explorer (beta)
-                </span>
-            </span>
+            <Image
+                alt="Solana Explorer"
+                height={111}
+                src={Logo}
+                width={427}
+                priority
+                className="h-8 w-auto max-w-none"
+            />
         </Link>
     );
 }
@@ -62,7 +62,7 @@ export function useNavRoutes(): NavRoute[] {
     const segments = useSelectedLayoutSegments();
     return [
         { active: segment === 'feature-gates', href: featureGatesPath, id: 'feature-gates', label: 'Feature Gates' },
-        // Keep the MCP route available by direct URL, but hidden from the navigation until announced.
+        // Keep MCP accessible by direct URL, but hidden from navigation until announced.
         {
             active: segments[0] === 'tx' && segments[1] === '(inspector)',
             href: inspectorPath,
