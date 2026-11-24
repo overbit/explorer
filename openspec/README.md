@@ -1,6 +1,6 @@
 # OpenSpec
 
-This directory is the durable home for the rationale behind non-trivial design and architectural decisions in this repository. The convention itself — _why we picked OpenSpec, what's required, and what's optional_ — is captured as the first proposal under [`changes/pick-adr-methodology/proposal.md`](changes/pick-adr-methodology/proposal.md). Read it once before authoring a new proposal.
+This directory is the durable home for the rationale behind non-trivial design and architectural decisions in this repository. The convention itself — _why we picked OpenSpec, what's required, and what's optional_ — is captured as the first proposal under [`changes/archive/2026-11-18-pick-adr-methodology/proposal.md`](changes/archive/2026-11-18-pick-adr-methodology/proposal.md). Read it once before authoring a new proposal.
 
 ## When to write a proposal
 
@@ -44,7 +44,7 @@ openspec validate <change-id> --type change --strict
 openspec list
 ```
 
-CI runs `pnpm openspec:validate` as part of the `Build-And-Test` job. It enforces **well-formedness only** — that proposals and spec deltas parse and follow the canonical layout. CI does NOT enforce whether a proposal _exists_ for a given change; that judgement stays with the author and reviewer.
+CI runs `pnpm openspec:validate` as part of the `Format-And-Lint` job. It enforces **well-formedness only** — that proposals and spec deltas parse and follow the canonical layout. CI does NOT enforce whether a proposal _exists_ for a given change; that judgement stays with the author and reviewer.
 
 ## Brownfield handling
 

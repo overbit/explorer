@@ -4,7 +4,7 @@ import { Account } from '@providers/accounts';
 import React from 'react';
 
 import { CardHeader, CardTitle } from '@/app/shared/ui/Card';
-import { BaseTable } from '@/app/shared/ui/Table';
+import { KeyValue } from '@/app/shared/ui/key-value';
 
 import { Address } from './Address';
 
@@ -12,42 +12,36 @@ type AccountHeaderProps = {
     title: string;
     analyticsSection: string;
     refresh: () => void;
+    fetching?: boolean;
 };
 
 type AccountProps = {
     account: Account;
 };
 
-export function AccountHeader({ title, analyticsSection, refresh }: AccountHeaderProps) {
+export function AccountHeader({ title, analyticsSection, refresh, fetching }: AccountHeaderProps) {
     return (
         <CardHeader ui="dashkit">
             <CardTitle as="h3" ui="dashkit">
                 {title}
             </CardTitle>
-            <RefreshButton analyticsSection={analyticsSection} onClick={refresh} />
+            <RefreshButton analyticsSection={analyticsSection} onClick={refresh} fetching={fetching} />
         </CardHeader>
     );
 }
 
 export function AccountAddressRow({ account }: AccountProps) {
     return (
-        <BaseTable.Row>
-            <BaseTable.Cell>Address</BaseTable.Cell>
-            <BaseTable.Cell className="text-right">
-                <Address pubkey={account.pubkey} alignRight raw />
-            </BaseTable.Cell>
-        </BaseTable.Row>
+        <KeyValue label="Address">
+            <Address pubkey={account.pubkey} raw />
+        </KeyValue>
     );
 }
 
 export function AccountBalanceRow({ account }: AccountProps) {
-    const { lamports } = account;
     return (
-        <BaseTable.Row>
-            <BaseTable.Cell>Balance (SOL)</BaseTable.Cell>
-            <BaseTable.Cell className="text-right uppercase">
-                <SolBalance lamports={lamports} />
-            </BaseTable.Cell>
-        </BaseTable.Row>
+        <KeyValue label="Balance (SOL)" valueClassName="uppercase">
+            <SolBalance lamports={account.lamports} />
+        </KeyValue>
     );
 }

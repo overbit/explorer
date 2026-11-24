@@ -29,17 +29,23 @@ export const VOTE_PROGRAM_LABEL = 'vote';
  */
 export type ParserProgramLabel =
     | typeof ADDRESS_LOOKUP_TABLE_PROGRAM_LABEL
+    | typeof BPF_LOADER_PROGRAM_LABEL
     | typeof BPF_UPGRADEABLE_LOADER_PROGRAM_LABEL
     | 'compute-budget'
     | 'ed25519'
     | 'lighthouse'
+    | 'mango'
     | 'mpl-token-metadata'
     | 'pyth'
+    | 'serum'
+    | 'solana-attestation-service'
     | typeof SPL_ASSOCIATED_TOKEN_ACCOUNT_PROGRAM_LABEL
     | typeof SPL_MEMO_PROGRAM_LABEL
     | typeof SPL_TOKEN_PROGRAM_LABEL
     | typeof SPL_TOKEN_2022_PROGRAM_LABEL
     | typeof SYSTEM_PROGRAM_LABEL
+    | 'token-swap'
+    | 'wormhole'
     | 'zk-elgamal-proof';
 
 export const TOKEN_PROGRAMS = [SPL_TOKEN_PROGRAM_LABEL, SPL_TOKEN_2022_PROGRAM_LABEL] as const;

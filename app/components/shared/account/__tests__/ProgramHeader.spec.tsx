@@ -1,8 +1,9 @@
 import { gen } from '@__fixtures__/gen';
-import type { SupportedIdl } from '@entities/idl';
+import type { ProgramIdlPair, ProgramIdls, SupportedIdl } from '@entities/idl';
 import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 
+import { getOnChainIdls } from '@/app/entities/idl/model/sourced-idl';
 import { Cluster } from '@/app/utils/cluster';
 
 import { ProgramHeader } from '../ProgramHeader';
@@ -17,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/app/entities/idl/model/use-program-idls', () => ({ useProgramIdls: mocks.useProgramIdls }));
 vi.mock('@features/security-txt', () => ({ useSecurityTxt: mocks.useSecurityTxt }));
 vi.mock('@providers/cluster', () => ({
-    useCluster: () => ({ cluster: Cluster.MainnetBeta, url: 'https://example.com' }),
+    useCluster: () => ({ cluster: Cluster.Mainnet, url: 'https://example.com' }),
 }));
 // Partial mock: the @entities/idl barrel transitively pulls real exports from this module, so only
 // override PROGRAM_INFO_BY_ID (via a getter so each test can swap the trusted-registry contents).
@@ -44,13 +45,13 @@ function anchorIdlNamed(name: string): SupportedIdl {
 }
 
 function mockIdls(idl?: SupportedIdl): void {
-    mocks.useProgramIdls.mockReturnValue({
+    const onChain: ProgramIdlPair = {
         anchorIdl: idl,
         anchorIdlAddress: undefined,
-        isLoading: false,
         programMetadataIdl: undefined,
         programMetadataIdlAddress: undefined,
-    });
+    };
+    mocks.useProgramIdls.mockReturnValue({ idls: getOnChainIdls(onChain) } satisfies ProgramIdls);
 }
 
 describe('ProgramHeader', () => {
@@ -62,7 +63,7 @@ describe('ProgramHeader', () => {
     });
 
     test('should prefer the trusted-registry name over security.txt and IDL names', () => {
-        mocks.programInfoById = { [ADDRESS]: { deployments: [Cluster.MainnetBeta], name: 'Trusted Program' } };
+        mocks.programInfoById = { [ADDRESS]: { deployments: [Cluster.Mainnet], name: 'Trusted Program' } };
         mocks.useSecurityTxt.mockReturnValue({ securityTxt: gen.securityTxt({ name: 'SecTxt Name' }) });
         mockIdls(anchorIdlNamed('idl_program'));
 

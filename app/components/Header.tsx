@@ -25,27 +25,24 @@ export function Header({ address, account, tokenInfo, isTokenInfoLoading }: Head
         () => ({
             address,
             isTokenMint: !!isTokenMint,
-            solflareVerified: tokenInfo && 'verified' in tokenInfo ? tokenInfo.verified : undefined,
         }),
-        [address, isTokenMint, tokenInfo],
+        [address, isTokenMint],
     );
 
     return (
-        <div className="mb-9 lg:mb-12">
-            <div className="flex flex-col items-start gap-4 pb-3 pt-2 lg:flex-row lg:items-end lg:justify-between lg:gap-1">
-                <AccountHeader
-                    address={address}
-                    account={account}
-                    tokenInfo={tokenInfo}
-                    isTokenInfoLoading={isTokenInfoLoading}
-                />
-                {isTokenMint && (
-                    <div className="flex w-full flex-col gap-1 sm:items-start sm:gap-2 md:w-auto md:flex-row">
-                        <TokenVerificationBadge target={verificationTarget} isTokenInfoLoading={isTokenInfoLoading} />
-                        <TokenMarketData marketData={marketData} />
-                    </div>
-                )}
-            </div>
-        </div>
+        <header className="mb-3 flex flex-col items-start gap-4 py-6 lg:flex-row lg:items-end lg:justify-between lg:gap-1">
+            <AccountHeader
+                address={address}
+                account={account}
+                tokenInfo={tokenInfo}
+                isTokenInfoLoading={isTokenInfoLoading}
+            />
+            {isTokenMint && (
+                <div className="flex w-full flex-col gap-1 sm:items-start sm:gap-2 md:w-auto md:flex-row">
+                    <TokenVerificationBadge target={verificationTarget} isTokenInfoLoading={isTokenInfoLoading} />
+                    <TokenMarketData marketData={marketData} />
+                </div>
+            )}
+        </header>
     );
 }

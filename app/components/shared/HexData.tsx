@@ -1,9 +1,10 @@
 // TODO(fsd): relocate this module to @shared or the appropriate feature/entity layer.
 import { Copyable } from '@components/common/Copyable';
+import type { ReadonlyUint8Array } from '@solana/kit';
 import { cva } from 'class-variance-authority';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { ByteArray, toHex } from '@/app/shared/lib/bytes';
+import { toHex } from '@/app/shared/lib/bytes';
 
 import { cn } from './utils';
 
@@ -74,18 +75,18 @@ export function groupHexRows(spans: HexSpan[], rowSize = ROW_SIZE, spanSize = SP
     return rows;
 }
 
-const fullContentVariants = cva('items-center', {
+const fullContentVariants = cva('items-baseline', {
     variants: {
         align: {
-            end: 'justify-end',
+            end: 'md:justify-end',
             start: 'justify-start',
         },
     },
 });
 
 type HexDataBase = {
-    raw: ByteArray;
-    copyableRaw?: ByteArray;
+    raw: ReadonlyUint8Array;
+    copyableRaw?: ReadonlyUint8Array;
     className?: string;
     inverted?: boolean;
     isCopyable?: boolean;
@@ -95,7 +96,8 @@ type HexDataBase = {
 // The layout is a discriminated union: `rowSize` / `align` shape the default `fixed` grid only.
 // The `fit` (responsive wrap) layout ignores them, so the types forbid passing them there rather
 // than silently dropping them.
-//   - `fixed` (default): grouped rows; `align` right/left-aligns, `rowSize` sets bytes/row.
+//   - `fixed` (default): grouped rows that wrap between bytes when narrow; `align` right/left-aligns,
+//                         `rowSize` sets bytes/row.
 //   - `fit`           : reflows the hex to the container width (mobile drawer / full-width panes).
 type HexDataLayout = { layout?: 'fixed'; align?: 'start' | 'end'; rowSize?: number } | { layout: 'fit' };
 
@@ -104,8 +106,8 @@ export type HexDataProps = HexDataBase & HexDataLayout;
 export function HexData(props: HexDataProps) {
     const { raw, className, copyableRaw, inverted = false, isCopyable = true, spanSize = SPAN_SIZE } = props;
 
-    // `align` / `rowSize` are meaningful only for the fixed grid ('end' is the legacy default,
-    // right-aligned in table cells); the other layouts fall back to these harmless defaults.
+    // `align` / `rowSize` are meaningful only for the fixed grid ('end' is the default, right-aligned
+    // from `md` up in table cells); the other layouts fall back to these harmless defaults.
     let align: 'start' | 'end' = 'end';
     let rowSize = ROW_SIZE;
     if (props.layout === undefined || props.layout === 'fixed') {
@@ -265,7 +267,9 @@ function FullContent({
         </div>
     ));
 
-    const pre = <pre className="mb-0 inline-block bg-heavy-metal-900 p-1.5 text-left text-xs">{divs}</pre>;
+    const pre = (
+        <pre className="mb-0 inline-block whitespace-pre-wrap bg-heavy-metal-900 p-1.5 text-left text-xs">{divs}</pre>
+    );
 
     return (
         <div className={cn('flex', fullContentVariants({ align }), className)}>

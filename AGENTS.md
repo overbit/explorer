@@ -57,11 +57,11 @@
   - `pre-commit` — runs `pretty:format`, `eslint:lint`, and `test:changed` scoped to staged files.
   - `pre-push` — runs the full pipeline (format, lint, openspec:validate, build, test).
 - Optionally, use [`act`](https://github.com/nektos/act) to run GitHub Actions workflows locally before pushing.
-- [`bench/BUILD.md`](bench/BUILD.md) is the committed route-size snapshot. Any PR that changes client bundle sizes must refresh it with `pnpm build:info` and commit the result — the `Build-Info` CI job fails unless the committed file is byte-identical to the fresh build (rounding hysteresis absorbs sub-step variance).
+- [`bench/BUILD.md`](bench/BUILD.md) is the committed route-size snapshot. Any PR that changes client bundle sizes must refresh it with `pnpm build:info` and commit the result — the `Build` CI job fails unless the committed file is byte-identical to the fresh build (rounding hysteresis absorbs sub-step variance).
 
 ## Design Decisions (OpenSpec)
 
-Non-trivial design and architectural choices are captured as **OpenSpec change proposals** under `openspec/changes/<change-id>/proposal.md`. `proposal.md` is the only required artifact; specs/tasks/design are optional per-change. See [`openspec/README.md`](openspec/README.md) for the convention and [`openspec/changes/pick-adr-methodology/proposal.md`](openspec/changes/pick-adr-methodology/proposal.md) for the rationale. Validate with `openspec validate <change-id> --type change --strict`.
+Non-trivial design and architectural choices are captured as **OpenSpec change proposals** under `openspec/changes/<change-id>/proposal.md`. `proposal.md` is the only required artifact; specs/tasks/design are optional per-change. See [`openspec/README.md`](openspec/README.md) for the convention and [`openspec/changes/archive/2026-11-18-pick-adr-methodology/proposal.md`](openspec/changes/archive/2026-11-18-pick-adr-methodology/proposal.md) for the rationale. Validate with `openspec validate <change-id> --type change --strict`.
 
 ## Writing
 

@@ -36,7 +36,7 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, {
+        await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, {
             signal: abortController.signal,
         });
 
@@ -57,7 +57,7 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, {
+        await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, {
             next: nextOptions,
         });
 
@@ -75,7 +75,7 @@ describe('getTokenInfos', () => {
 
         vi.mocked(global.fetch).mockRejectedValueOnce(error);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, {
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, {
             onError,
         });
 
@@ -84,7 +84,7 @@ describe('getTokenInfos', () => {
     });
 
     it('should return empty array for empty addresses', async () => {
-        const result = await getTokenInfos([], Cluster.MainnetBeta, undefined);
+        const result = await getTokenInfos([], Cluster.Mainnet, undefined);
 
         expect(global.fetch).not.toHaveBeenCalled();
         expect(result).toEqual([]);
@@ -106,7 +106,7 @@ describe('getTokenInfos', () => {
             statusText: 'Internal Server Error',
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
 
         expect(onError).toHaveBeenCalledTimes(1);
         const error = onError.mock.calls[0][0];
@@ -116,31 +116,20 @@ describe('getTokenInfos', () => {
         expect(result).toEqual([]);
     });
 
-    it('should call onError with TokenInfoInvalidResponseError when content is missing', async () => {
+    it.each([
+        ['missing', {}],
+        ['not an array', { content: { [mockToken.address]: mockToken } }],
+    ])('should call onError with TokenInfoInvalidResponseError when content is %s', async (_label, body) => {
         const onError = vi.fn();
 
         vi.mocked(global.fetch).mockResolvedValueOnce({
-            json: () => Promise.resolve({}),
+            json: () => Promise.resolve(body),
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
 
         expect(onError).toHaveBeenCalledTimes(1);
-        expect(onError.mock.calls[0][0]).toBeInstanceOf(TokenInfoInvalidResponseError);
-        expect(result).toEqual([]);
-    });
-
-    it('should call onError with TokenInfoInvalidResponseError when content is not an array', async () => {
-        const onError = vi.fn();
-
-        vi.mocked(global.fetch).mockResolvedValueOnce({
-            json: () => Promise.resolve({ content: { [mockToken.address]: mockToken } }),
-            ok: true,
-        } as Response);
-
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
-
         expect(onError.mock.calls[0][0]).toBeInstanceOf(TokenInfoInvalidResponseError);
         expect(result).toEqual([]);
     });
@@ -156,7 +145,7 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
 
         expect(result).toEqual([mockToken]);
         expect(onError).toHaveBeenCalledTimes(1);
@@ -165,7 +154,7 @@ describe('getTokenInfos', () => {
 
     // UTL omits these keys rather than sending null for some tokens. Requiring them would drop the
     // token outright, losing the name and symbol over a missing logo — the failure this whole path
-    // exists to prevent. `discover-with-utl.ts` reads the same API and treats both as optional.
+    // exists to prevent.
     it('should keep a token that omits logoURI, reporting the logo as null', async () => {
         const onError = vi.fn();
         const withoutLogo = { address: mockToken.address, decimals: 9, name: 'Wrapped SOL', symbol: 'SOL' };
@@ -175,9 +164,9 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
 
-        expect(result).toEqual([{ ...withoutLogo, logoURI: null }]);
+        expect(result).toEqual([{ ...withoutLogo, logoURI: null, verified: false }]);
         expect(onError).not.toHaveBeenCalled();
     });
 
@@ -190,23 +179,50 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined, { onError });
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
 
-        expect(result).toEqual([{ ...withoutDecimals, decimals: null }]);
+        expect(result).toEqual([{ ...withoutDecimals, decimals: null, verified: false }]);
         expect(onError).not.toHaveBeenCalled();
     });
 
-    it('should keep a token that carries fields the app does not read', async () => {
-        const withExtras = { ...mockToken, chainId: 101, holders: null, tags: ['lp-token'] };
+    it('should set verified to false for a token that omits it', async () => {
+        const onError = vi.fn();
+        const withoutVerified = {
+            address: mockToken.address,
+            decimals: 9,
+            logoURI: null,
+            name: 'Wrapped SOL',
+            symbol: 'SOL',
+        };
+
+        vi.mocked(global.fetch).mockResolvedValueOnce({
+            json: () => Promise.resolve({ content: [withoutVerified] }),
+            ok: true,
+        } as Response);
+
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined, { onError });
+
+        expect(result).toEqual([{ ...mockToken, verified: false }]);
+        expect(onError).not.toHaveBeenCalled();
+    });
+
+    it('should keep a token with extra fields and return only the TokenInfo fields', async () => {
+        const withExtras = {
+            ...mockToken,
+            chainId: 101,
+            extensions: { coingeckoId: 'wrapped-solana' },
+            holders: 3,
+            tags: ['lp-token'],
+        };
 
         vi.mocked(global.fetch).mockResolvedValueOnce({
             json: () => Promise.resolve({ content: [withExtras] }),
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined);
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined);
 
-        expect(result).toEqual([withExtras]);
+        expect(result).toEqual([mockToken]);
     });
 
     it('should return tokens on successful response', async () => {
@@ -217,7 +233,7 @@ describe('getTokenInfos', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfos([mockToken.address], Cluster.MainnetBeta, undefined);
+        const result = await getTokenInfos([mockToken.address], Cluster.Mainnet, undefined);
 
         expect(result).toEqual([mockToken]);
     });
@@ -243,7 +259,7 @@ describe('getTokenInfo', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfo(mockToken.address, Cluster.MainnetBeta);
+        const result = await getTokenInfo(mockToken.address, Cluster.Mainnet);
 
         expect(result).toEqual(mockToken);
     });
@@ -256,7 +272,7 @@ describe('getTokenInfo', () => {
             ok: true,
         } as Response);
 
-        const result = await getTokenInfo(mockToken.address, Cluster.MainnetBeta);
+        const result = await getTokenInfo(mockToken.address, Cluster.Mainnet);
 
         expect(result).toBeUndefined();
     });

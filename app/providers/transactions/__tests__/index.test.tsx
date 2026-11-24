@@ -1,16 +1,16 @@
 import { DEFAULT_SIGNATURE } from '@__fixtures__/gen';
-import { ActionType, type Dispatch, FetchStatus } from '@providers/cache';
+import { type Dispatch, FetchStatus } from '@providers/cache';
 import { Cluster } from '@utils/cluster';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { lastDispatch, rpcStub } from '@/app/__tests__/mock-rpc';
 
 import { fetchTransactionStatus, type TransactionStatus } from '../index';
 
 const MOCK_URL = 'https://api.mainnet-beta.solana.com';
 
 const getSignatureStatuses = vi.fn();
-const getRpc = vi.fn((_url: string) => ({
-    getSignatureStatuses: (...args: unknown[]) => ({ send: () => getSignatureStatuses(...args) }),
-}));
+const getRpc = vi.fn((_url: string) => rpcStub({ getSignatureStatuses }));
 vi.mock('@entities/cluster', async importOriginal => ({
     ...((await importOriginal()) as Record<string, unknown>),
     getRpc: (...args: [string]) => getRpc(...args),
@@ -26,29 +26,23 @@ function status(overrides: Record<string, unknown> = {}) {
     };
 }
 
-const dispatch = vi.fn() as unknown as Dispatch<TransactionStatus>;
-
-function lastUpdate() {
-    const calls = vi.mocked(dispatch).mock.calls;
-    return calls[calls.length - 1][0] as { data?: TransactionStatus; status: FetchStatus; type: ActionType };
-}
+const dispatch = vi.fn<Dispatch<TransactionStatus>>();
 
 beforeEach(() => {
     vi.resetAllMocks();
-    getRpc.mockReturnValue({
-        getSignatureStatuses: (...args: unknown[]) => ({ send: () => getSignatureStatuses(...args) }),
-    });
 });
 
 describe('fetchTransactionStatus', () => {
-    it('should convert kit bigints to numbers', async () => {
+    it('should convert kit bigints to numbers and not fetch the block time', async () => {
         getSignatureStatuses.mockResolvedValue({ value: [status()] });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
         expect(getRpc).toHaveBeenCalledWith(MOCK_URL);
+        expect(getSignatureStatuses).toHaveBeenCalledTimes(1);
         expect(getSignatureStatuses).toHaveBeenCalledWith([DEFAULT_SIGNATURE], { searchTransactionHistory: true });
-        expect(lastUpdate()).toMatchObject({
+        expect(lastDispatch(dispatch).data?.info).not.toHaveProperty('timestamp');
+        expect(lastDispatch(dispatch)).toMatchObject({
             data: {
                 info: {
                     confirmationStatus: 'confirmed',
@@ -62,31 +56,22 @@ describe('fetchTransactionStatus', () => {
         });
     });
 
-    it('should not fetch the block time', async () => {
-        getSignatureStatuses.mockResolvedValue({ value: [status()] });
-
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
-
-        expect(getSignatureStatuses).toHaveBeenCalledTimes(1);
-        expect(lastUpdate().data?.info).not.toHaveProperty('timestamp');
-    });
-
     it('should report max confirmations for a rooted signature', async () => {
         getSignatureStatuses.mockResolvedValue({
             value: [status({ confirmationStatus: 'finalized', confirmations: null })],
         });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        expect(lastUpdate().data?.info?.confirmations).toBe('max');
+        expect(lastDispatch(dispatch).data?.info?.confirmations).toBe('max');
     });
 
     it('should drop a null confirmationStatus rather than leaking it downstream', async () => {
         getSignatureStatuses.mockResolvedValue({ value: [status({ confirmationStatus: null })] });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        const info = lastUpdate().data?.info;
+        const info = lastDispatch(dispatch).data?.info;
         expect(info?.confirmationStatus).toBeUndefined();
         expect(info && 'confirmationStatus' in info).toBe(true);
     });
@@ -94,9 +79,9 @@ describe('fetchTransactionStatus', () => {
     it('should treat a null status entry as a fetched-but-missing signature', async () => {
         getSignatureStatuses.mockResolvedValue({ value: [null] });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        expect(lastUpdate()).toMatchObject({
+        expect(lastDispatch(dispatch)).toMatchObject({
             data: { info: null, signature: DEFAULT_SIGNATURE },
             status: FetchStatus.Fetched,
         });
@@ -107,9 +92,9 @@ describe('fetchTransactionStatus', () => {
             value: [status({ err: { InstructionError: [2n, { Custom: 6001n }] } })],
         });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        const err = lastUpdate().data?.info?.result.err;
+        const err = lastDispatch(dispatch).data?.info?.result.err;
         expect(err).toStrictEqual({ InstructionError: [2, { Custom: 6001 }] });
         expect(() => JSON.stringify(err)).not.toThrow();
     });
@@ -117,16 +102,16 @@ describe('fetchTransactionStatus', () => {
     it('should dispatch FetchFailed when the response carries the wrong number of statuses', async () => {
         getSignatureStatuses.mockResolvedValue({ value: [] });
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        expect(lastUpdate()).toMatchObject({ data: undefined, status: FetchStatus.FetchFailed });
+        expect(lastDispatch(dispatch)).toMatchObject({ data: undefined, status: FetchStatus.FetchFailed });
     });
 
     it('should dispatch FetchFailed when the status request throws', async () => {
         getSignatureStatuses.mockRejectedValue(new Error('rpc boom'));
 
-        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.MainnetBeta, MOCK_URL);
+        await fetchTransactionStatus(dispatch, DEFAULT_SIGNATURE, Cluster.Mainnet, MOCK_URL);
 
-        expect(lastUpdate()).toMatchObject({ data: undefined, status: FetchStatus.FetchFailed });
+        expect(lastDispatch(dispatch)).toMatchObject({ data: undefined, status: FetchStatus.FetchFailed });
     });
 });

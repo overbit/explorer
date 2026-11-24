@@ -1,11 +1,11 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { type ReactNode } from 'react';
-import { SWRConfig } from 'swr';
+import { renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { swrWrapper, waitForHook } from '@/app/__tests__/swr-hook';
 import { Cluster } from '@/app/utils/cluster';
 
-import { useProgramIdls } from '../use-program-idls';
+import { IdlVariant } from '../idl-variant';
+import { type ProgramIdls, useProgramIdls } from '../use-program-idls';
 
 const mocks = vi.hoisted(() => ({
     fetch: vi.fn(),
@@ -22,15 +22,7 @@ vi.mock('../../api/load-resolve-program-idls', () => ({
 
 const PROGRAM_ID = '11111111111111111111111111111111';
 
-// A fresh SWR cache per render so keys don't bleed across tests; disable error retries so a
-// throwing fetcher resolves deterministically within the test instead of scheduling backoff timers.
-function wrapper({ children }: { children: ReactNode }) {
-    return (
-        <SWRConfig value={{ dedupingInterval: 0, provider: () => new Map(), shouldRetryOnError: false }}>
-            {children}
-        </SWRConfig>
-    );
-}
+const wrapper = swrWrapper({ dedupingInterval: 0, shouldRetryOnError: false });
 
 describe('useProgramIdls', () => {
     beforeEach(() => {
@@ -48,7 +40,7 @@ describe('useProgramIdls', () => {
     });
 
     describe('known clusters (server route)', () => {
-        it('should map the /api/idl-latest payload into the IDL slots', async () => {
+        it('should map the /api/idl-latest payload into one IDL per source', async () => {
             mocks.fetch.mockResolvedValue({
                 json: async () => ({
                     idls: { anchor: { name: 'anchor_idl' }, programMetadata: { name: 'pmp_idl' } },
@@ -57,12 +49,20 @@ describe('useProgramIdls', () => {
             });
 
             const { result } = renderHook(
-                () => useProgramIdls(PROGRAM_ID, 'https://api.mainnet-beta.solana.com', Cluster.MainnetBeta),
+                () => useProgramIdls(PROGRAM_ID, 'https://api.mainnet-beta.solana.com', Cluster.Mainnet),
                 { wrapper },
             );
 
-            await waitFor(() => expect(result.current.anchorIdl).toEqual({ name: 'anchor_idl' }));
-            expect(result.current.programMetadataIdl).toEqual({ name: 'pmp_idl' });
+            await waitForHook(() => expect(result.current.idls).toBeDefined());
+            expect(result.current.idls).toEqual([
+                {
+                    idl: { name: 'pmp_idl' },
+                    idlAddress: undefined,
+                    source: IdlVariant.ProgramMetadata,
+                    standard: 'Anchor',
+                },
+                { idl: { name: 'anchor_idl' }, idlAddress: undefined, source: IdlVariant.Anchor, standard: 'Anchor' },
+            ]);
 
             const requestedUrl = mocks.fetch.mock.calls[0]?.[0] as string;
             expect(requestedUrl).toContain('/api/idl-latest');
@@ -73,13 +73,11 @@ describe('useProgramIdls', () => {
             mocks.fetch.mockResolvedValue({ ok: false, status: 502 });
 
             const { result } = renderHook(
-                () => useProgramIdls(PROGRAM_ID, 'https://api.mainnet-beta.solana.com', Cluster.MainnetBeta),
+                () => useProgramIdls(PROGRAM_ID, 'https://api.mainnet-beta.solana.com', Cluster.Mainnet),
                 { wrapper },
             );
 
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
-            expect(result.current.anchorIdl).toBeUndefined();
-            expect(result.current.programMetadataIdl).toBeUndefined();
+            await waitForHook(() => expect(result.current.idls).toEqual([]));
         });
     });
 
@@ -94,8 +92,11 @@ describe('useProgramIdls', () => {
                 wrapper,
             });
 
-            await waitFor(() => expect(result.current.anchorIdl).toEqual({ name: 'custom_anchor_idl' }));
-            expect(result.current.programMetadataIdl).toEqual({ name: 'custom_pmp_idl' });
+            await waitForHook(() => expect(result.current.idls).toBeDefined());
+            expect(idlBySource(result.current.idls)).toEqual({
+                [IdlVariant.Anchor]: { name: 'custom_anchor_idl' },
+                [IdlVariant.ProgramMetadata]: { name: 'custom_pmp_idl' },
+            });
             // The resolver runs against the user-supplied RPC URL (so localhost works end-to-end).
             expect(mocks.resolveProgramIdlsClient).toHaveBeenCalledWith(
                 expect.objectContaining({ programId: PROGRAM_ID, url: 'http://localhost:8899' }),
@@ -104,35 +105,47 @@ describe('useProgramIdls', () => {
             expect(mocks.fetch).not.toHaveBeenCalled();
         });
 
-        it('should fall back to undefined IDLs when the resolver throws', async () => {
+        it('should return undefined while the client resolver loads', async () => {
+            mocks.resolveProgramIdlsClient.mockReturnValue(new Promise(() => undefined));
+
+            const { result } = renderHook(() => useProgramIdls(PROGRAM_ID, 'http://localhost:8899', Cluster.Custom), {
+                wrapper,
+            });
+
+            await waitForHook(() => expect(mocks.resolveProgramIdlsClient).toHaveBeenCalled());
+            expect(result.current.idls).toBeUndefined();
+        });
+
+        it('should return no IDLs when the resolver throws', async () => {
             mocks.resolveProgramIdlsClient.mockRejectedValue(new Error('connection refused'));
 
             const { result } = renderHook(() => useProgramIdls(PROGRAM_ID, 'http://localhost:8899', Cluster.Custom), {
                 wrapper,
             });
 
-            await waitFor(() => expect(result.current.isLoading).toBe(false));
-            expect(result.current.anchorIdl).toBeUndefined();
-            expect(result.current.programMetadataIdl).toBeUndefined();
+            await waitForHook(() => expect(result.current.idls).toEqual([]));
         });
     });
 
-    // A known cluster can still point at a local validator (e.g. MainnetBeta + http://localhost:8899).
+    // A known cluster can still point at a local validator (e.g. Mainnet + http://localhost:8899).
     // `shouldUseDirectRpc` returns true for that combination, so resolution must run client-side against
     // the localhost RPC — loading from the local validator, never from real mainnet via the server route.
     describe('known cluster pointed at a local validator', () => {
-        it('should resolve client-side against localhost for MainnetBeta + http://localhost:8899', async () => {
+        it('should resolve client-side against localhost for Mainnet + http://localhost:8899', async () => {
             mocks.resolveProgramIdlsClient.mockResolvedValue({
                 anchorIdl: { name: 'local_anchor_idl' },
                 programMetadataIdl: undefined,
             });
 
-            const { result } = renderHook(
-                () => useProgramIdls(PROGRAM_ID, 'http://localhost:8899', Cluster.MainnetBeta),
-                { wrapper },
-            );
+            const { result } = renderHook(() => useProgramIdls(PROGRAM_ID, 'http://localhost:8899', Cluster.Mainnet), {
+                wrapper,
+            });
 
-            await waitFor(() => expect(result.current.anchorIdl).toEqual({ name: 'local_anchor_idl' }));
+            await waitForHook(() =>
+                expect(idlBySource(result.current.idls)).toEqual({
+                    [IdlVariant.Anchor]: { name: 'local_anchor_idl' },
+                }),
+            );
             // Resolved against the user's local RPC URL (the correct network)...
             expect(mocks.resolveProgramIdlsClient).toHaveBeenCalledWith(
                 expect.objectContaining({ programId: PROGRAM_ID, url: 'http://localhost:8899' }),
@@ -141,4 +154,22 @@ describe('useProgramIdls', () => {
             expect(mocks.fetch).not.toHaveBeenCalled();
         });
     });
+
+    describe('idls', () => {
+        it('should return undefined while the on-chain IDLs load', async () => {
+            mocks.fetch.mockReturnValue(new Promise(() => undefined));
+
+            const { result } = renderHook(
+                () => useProgramIdls(PROGRAM_ID, 'https://api.mainnet-beta.solana.com', Cluster.Mainnet),
+                { wrapper },
+            );
+
+            await waitForHook(() => expect(mocks.fetch).toHaveBeenCalled());
+            expect(result.current.idls).toBeUndefined();
+        });
+    });
 });
+
+function idlBySource(idls: ProgramIdls['idls']) {
+    return Object.fromEntries((idls ?? []).map(({ idl, source }) => [source, idl]));
+}
